@@ -68,13 +68,26 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # keystore ثابت از داخل ریپو (.github/tiknet-release.keystore) تا هر بیلد با همان امضا باشد
-      - name: Setup key.properties
+      # امضای ریلز از GitHub Secrets (keystore به صورت base64)
+      - name: Setup signing keystore from secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
         run: |
-          echo "storePassword=tiknet123" > android/key.properties
-          echo "keyPassword=tiknet123" >> android/key.properties
-          echo "keyAlias=tiknet" >> android/key.properties
-          echo "storeFile=../../.github/tiknet-release.keystore" >> android/key.properties
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::Secret ANDROID_KEYSTORE_BASE64 is not set. Add it in repo Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          mkdir -p .github/signing
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > .github/signing/release.keystore
+          STORE_PASS="${ANDROID_KEYSTORE_PASSWORD:-tiknet123}"
+          KEY_ALIAS="${ANDROID_KEYSTORE_ALIAS:-tiknet}"
+          echo "storePassword=$STORE_PASS" > android/key.properties
+          echo "keyPassword=$STORE_PASS" >> android/key.properties
+          echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+          echo "storeFile=../../.github/signing/release.keystore" >> android/key.properties
+          echo "✅ Keystore restored from secret"
 
       - name: Show Makefile targets
         run: grep -E 'android' Makefile | head -30
