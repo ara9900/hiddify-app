@@ -68,6 +68,30 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # یک keystore ثابت برای امضای ریلز تا هر بیلد با همان کلید امضا شود و نصب روی نسخهٔ قبلی بدون حذف ممکن شود
+      - name: Cache signing keystore
+        id: keystore
+        uses: actions/cache@v4
+        with:
+          path: .android-keystore
+          key: tiknet-release-keystore-v1
+
+      - name: Create signing keystore
+        if: steps.keystore.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .android-keystore
+          keytool -genkeypair -v -storetype PKCS12 -keystore .android-keystore/release.keystore \
+            -alias tiknet -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass tiknet123 -keypass tiknet123 \
+            -dname "CN=TikNet, OU=App, O=TikNet, L=Tehran, ST=Tehran, C=IR"
+
+      - name: Setup key.properties
+        run: |
+          echo "storePassword=tiknet123" > android/key.properties
+          echo "keyPassword=tiknet123" >> android/key.properties
+          echo "keyAlias=tiknet" >> android/key.properties
+          echo "storeFile=../../.android-keystore/release.keystore" >> android/key.properties
+
       - name: Show Makefile targets
         run: grep -E 'android' Makefile | head -30
 
