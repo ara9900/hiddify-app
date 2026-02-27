@@ -61,6 +61,7 @@ class TikNetLoginPage extends HookConsumerWidget {
     }
 
     return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(

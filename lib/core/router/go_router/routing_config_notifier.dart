@@ -65,16 +65,21 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
   @override
   RoutingConfig build() {
     final isMobileBreakpoint = ref.watch(isMobileBreakpointProvider);
+    final tikNet = tikNetMode;
+    ref.watch(Preferences.tikNetAccessToken);
+    final tikNetLoggedIn = ref.read(Preferences.tikNetAccessToken).trim().isNotEmpty;
+
+    // In TikNet mode always build full config so redirect to /login runs (avoid black loadingConfig screen).
     final bool showProfilesAction;
     if (isMobileBreakpoint == true) {
       showProfilesAction = false;
     } else {
       showProfilesAction = ref.watch(hasAnyProfileProvider).value ?? false;
     }
-    if (isMobileBreakpoint == null) return loadingConfig;
-    final tikNet = tikNetMode;
-    ref.watch(Preferences.tikNetAccessToken);
-    final tikNetLoggedIn = ref.read(Preferences.tikNetAccessToken).trim().isNotEmpty;
+    if (!tikNet && isMobileBreakpoint == null) return loadingConfig;
+
+    // When TikNet and breakpoint still null, treat as mobile for layout.
+    final effectiveMobile = isMobileBreakpoint ?? true;
 
     return RoutingConfig(
       redirect: (context, state) {
@@ -118,7 +123,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
           StatefulShellRoute.indexedStack(
             builder: (_, _, navigationShell) => MyAdaptiveLayout(
               navigationShell: navigationShell,
-              isMobileBreakpoint: isMobileBreakpoint,
+              isMobileBreakpoint: effectiveMobile,
               showProfilesAction: false,
               tikNetMode: true,
             ),
