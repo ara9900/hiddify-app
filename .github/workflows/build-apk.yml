@@ -1,0 +1,101 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+
+env:
+  IS_GITHUB_ACTIONS: 1
+  CHANNEL: "dev"
+  FLUTTER_VERSION: '3.38.5'
+  NDK_VERSION: r28c
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions: write-all
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Fix submodule SSH to HTTPS
+        run: |
+          sed -i 's|ssh://git@github.com/|https://github.com/|g' .gitmodules
+          sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+      - name: Clean up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          df -h
+
+      - name: Add Swap
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Show Makefile targets
+        run: |
+          echo "=== Android targets ==="
+          grep -E 'android' Makefile | head -30
+
+      - name: Install deps
+        run: |
+          make android-apk-install-deps || make android-aab-install-deps || echo "manual deps"
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+
+      - name: Prepare
+        run: |
+          make android-apk-prepare || make android-aab-prepare || echo "prepare fallback"
+
+      - name: Build APK
+        run: |
+          make android-apk-release || flutter build apk --release --split-per-abi
+
+      - name: Find APK
+        run: |
+          echo "=== All APK files ==="
+          find . -name "*.apk" -type f
+          find . -name "*.aab" -type f
+          ls -R ./build/app/outputs/ 2>/dev/null || echo "no outputs"
+
+      - name: Collect
+        run: |
+          mkdir -p out
+          find ./build -name "*.apk" -exec cp {} out/ \; 2>/dev/null || true
+          find ./build -name "*.aab" -exec cp {} out/ \; 2>/dev/null || true
+          ls -la out/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hiddify-APK
+          path: ./out/*
+          retention-days: 30
