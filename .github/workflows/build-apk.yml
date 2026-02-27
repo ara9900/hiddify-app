@@ -15,34 +15,30 @@ jobs:
     permissions: write-all
 
     steps:
-      - name: Force git to use HTTPS instead of SSH
+      - name: Clone everything manually
         run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          echo "Git config set ✅"
-          git config --global --list | grep url
-
-      - name: Checkout with submodules
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: recursive
-
-      - name: Verify submodules
-        run: |
-          echo "=== hiddify-core ==="
+          
+          git clone https://github.com/ara9900/hiddify-app.git .
+          
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          
+          echo ""
+          echo "=== Submodule Status ==="
+          git submodule status --recursive
+          echo ""
+          echo "=== Root files ==="
+          ls -la
+          echo ""
+          echo "=== Core ==="
           ls hiddify-core/
           echo ""
           echo "=== ray2sing ==="
-          ls hiddify-core/ray2sing/ 2>/dev/null || echo "checking..."
-          echo ""
-          echo "=== hiddify-sing-box ==="
-          ls hiddify-core/hiddify-sing-box/ 2>/dev/null || echo "checking..."
-          echo ""
-          echo "=== All submodules ==="
-          git submodule status --recursive
+          ls hiddify-core/ray2sing/ 2>/dev/null || echo "empty"
 
-      - name: Clean up disk space
+      - name: Clean up disk
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
@@ -57,7 +53,6 @@ jobs:
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
-          free -h
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -75,9 +70,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Show Makefile android targets
-        run: |
-          grep -E 'android' Makefile | head -30
+      - name: Show Makefile targets
+        run: grep -E 'android' Makefile | head -30
 
       - name: Install deps
         run: |
