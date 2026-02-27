@@ -1,0 +1,63 @@
+name: Debug Info
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Show Makefile FULL
+        run: |
+          echo "============ FULL MAKEFILE ============"
+          cat Makefile
+          echo ""
+          echo "============ ALL MAKE TARGETS ============"
+          grep -E '^[a-zA-Z_-]+.*:' Makefile | sort
+
+      - name: Show CI workflow
+        run: |
+          echo "============ ci.yml ============"
+          cat .github/workflows/ci.yml 2>/dev/null || echo "NONE"
+          echo ""
+          echo "============ release.yml ============"
+          cat .github/workflows/release.yml 2>/dev/null || echo "NONE"
+
+      - name: Show Project Structure
+        run: |
+          echo "============ ROOT ============"
+          ls -la
+          echo ""
+          echo "============ ALL DIRS (depth 3) ============"
+          find . -maxdepth 3 -type d | grep -v '.git/' | sort
+          echo ""
+          echo "============ go.mod files ============"
+          find . -name "go.mod" -maxdepth 4
+          echo ""
+          echo "============ .sh files ============"
+          find . -name "*.sh" -maxdepth 3
+          cat *.sh 2>/dev/null | head -100 || echo "no root sh"
+          echo ""
+          echo "============ pubspec.yaml ============"
+          cat pubspec.yaml | head -50
+          echo ""
+          echo "============ android/build.gradle ============"
+          cat android/build.gradle 2>/dev/null | head -50
+          echo ""
+          echo "============ android/app/build.gradle ============"
+          cat android/app/build.gradle 2>/dev/null | head -80
+          echo ""
+          echo "============ .gitmodules ============"
+          cat .gitmodules 2>/dev/null || echo "NONE"
+          echo ""
+          echo "============ android/app/libs/ ============"
+          ls -la android/app/libs/ 2>/dev/null || echo "EMPTY"
+          echo ""
+          echo "============ lib/ structure ============"
+          find lib/ -maxdepth 2 -type d 2>/dev/null | sort
