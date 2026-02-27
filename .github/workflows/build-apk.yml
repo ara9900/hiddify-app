@@ -21,12 +21,25 @@ jobs:
           fetch-depth: 0
           submodules: false
 
-      - name: Fix submodule SSH to HTTPS
+      - name: Fix ALL submodule URLs (SSH to HTTPS)
         run: |
+          # Fix اصلی
           sed -i 's|ssh://git@github.com/|https://github.com/|g' .gitmodules
           sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
+          echo "=== Root .gitmodules ==="
+          cat .gitmodules
+          
+          # تنظیم git global برای تبدیل خودکار همه SSH به HTTPS
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          
+          # حالا clone کن
           git submodule sync --recursive
           git submodule update --init --recursive
+          
+          echo ""
+          echo "=== All submodules loaded ==="
+          find . -name ".gitmodules" -exec echo "--- {} ---" \; -exec cat {} \;
 
       - name: Clean up disk space
         run: |
@@ -61,34 +74,27 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Show Makefile targets
+      - name: Show Makefile android targets
         run: |
-          echo "=== Android targets ==="
           grep -E 'android' Makefile | head -30
 
       - name: Install deps
         run: |
-          make android-apk-install-deps || make android-aab-install-deps || echo "manual deps"
+          make android-apk-install-deps || make android-aab-install-deps || echo "trying manual"
           echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
 
       - name: Prepare
         run: |
-          make android-apk-prepare || make android-aab-prepare || echo "prepare fallback"
+          make android-apk-prepare || make android-aab-prepare || echo "prepare done"
 
       - name: Build APK
         run: |
           make android-apk-release || flutter build apk --release --split-per-abi
 
-      - name: Find APK
-        run: |
-          echo "=== All APK files ==="
-          find . -name "*.apk" -type f
-          find . -name "*.aab" -type f
-          ls -R ./build/app/outputs/ 2>/dev/null || echo "no outputs"
-
-      - name: Collect
+      - name: Find and Collect APK
         run: |
           mkdir -p out
+          find . -name "*.apk" -type f
           find ./build -name "*.apk" -exec cp {} out/ \; 2>/dev/null || true
           find ./build -name "*.aab" -exec cp {} out/ \; 2>/dev/null || true
           ls -la out/
