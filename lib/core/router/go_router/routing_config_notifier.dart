@@ -78,7 +78,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
     }
     if (!tikNet && isMobileBreakpoint == null) return loadingConfig;
 
-    // When TikNet and breakpoint still null, treat as mobile for layout.
+    // When breakpoint still null, treat as mobile for layout (bool? -> bool).
     final effectiveMobile = isMobileBreakpoint ?? true;
 
     return RoutingConfig(
@@ -169,7 +169,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
           StatefulShellRoute.indexedStack(
           builder: (_, _, navigationShell) => MyAdaptiveLayout(
             navigationShell: navigationShell,
-            isMobileBreakpoint: isMobileBreakpoint,
+            isMobileBreakpoint: effectiveMobile,
             showProfilesAction: showProfilesAction,
           ),
           branches: <StatefulShellBranch>[
@@ -186,7 +186,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                       pageBuilder: (_, state) =>
                           customTransition(TransitionType.fade, state.pageKey, const ProxiesOverviewPage()),
                     ),
-                    if (isMobileBreakpoint)
+                    if (effectiveMobile)
                       GoRoute(
                         name: 'profileDetails',
                         path: '/profile-details/:id',
@@ -279,7 +279,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                       pageBuilder: (_, state) =>
                           customTransition(TransitionType.slide, state.pageKey, const WarpOptionsPage()),
                     ),
-                    if (isMobileBreakpoint) ...[
+                    if (effectiveMobile) ...[
                       GoRoute(
                         name: 'logs',
                         path: '/logs',
@@ -297,7 +297,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                 ),
               ],
             ),
-            if (!isMobileBreakpoint) ...[
+            if (!effectiveMobile) ...[
               StatefulShellBranch(
                 routes: <GoRoute>[
                   GoRoute(
