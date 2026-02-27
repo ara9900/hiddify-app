@@ -15,31 +15,32 @@ jobs:
     permissions: write-all
 
     steps:
-      - name: Checkout
+      - name: Force git to use HTTPS instead of SSH
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          echo "Git config set ✅"
+          git config --global --list | grep url
+
+      - name: Checkout with submodules
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: false
+          submodules: recursive
 
-      - name: Fix ALL submodule URLs (SSH to HTTPS)
+      - name: Verify submodules
         run: |
-          # Fix اصلی
-          sed -i 's|ssh://git@github.com/|https://github.com/|g' .gitmodules
-          sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
-          echo "=== Root .gitmodules ==="
-          cat .gitmodules
-          
-          # تنظیم git global برای تبدیل خودکار همه SSH به HTTPS
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-          
-          # حالا clone کن
-          git submodule sync --recursive
-          git submodule update --init --recursive
-          
+          echo "=== hiddify-core ==="
+          ls hiddify-core/
           echo ""
-          echo "=== All submodules loaded ==="
-          find . -name ".gitmodules" -exec echo "--- {} ---" \; -exec cat {} \;
+          echo "=== ray2sing ==="
+          ls hiddify-core/ray2sing/ 2>/dev/null || echo "checking..."
+          echo ""
+          echo "=== hiddify-sing-box ==="
+          ls hiddify-core/hiddify-sing-box/ 2>/dev/null || echo "checking..."
+          echo ""
+          echo "=== All submodules ==="
+          git submodule status --recursive
 
       - name: Clean up disk space
         run: |
@@ -80,18 +81,18 @@ jobs:
 
       - name: Install deps
         run: |
-          make android-apk-install-deps || make android-aab-install-deps || echo "trying manual"
+          make android-apk-install-deps || make android-aab-install-deps || echo "manual"
           echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
 
       - name: Prepare
         run: |
-          make android-apk-prepare || make android-aab-prepare || echo "prepare done"
+          make android-apk-prepare || make android-aab-prepare || echo "done"
 
       - name: Build APK
         run: |
           make android-apk-release || flutter build apk --release --split-per-abi
 
-      - name: Find and Collect APK
+      - name: Collect APK
         run: |
           mkdir -p out
           find . -name "*.apk" -type f
