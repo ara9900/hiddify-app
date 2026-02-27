@@ -8,7 +8,7 @@ This app is customized for **TikNet**: login with panel account, 3 tabs only (Co
 - **Package (Android):** `com.tik.net`  
 - **Bundle ID (iOS):** `com.tik.net`
 
-در بیلد گیت‌هاب یک keystore ثابت (با cache) استفاده می‌شود تا هر بیلد با همان امضا ساخته شود و بتوان بدون حذف اپ، نسخهٔ جدید را روی نسخهٔ قبلی نصب کرد.
+**امضای ثابت (نصب روی نسخهٔ قبلی):** فایل `.github/tiknet-release.keystore` داخل ریپو قرار دارد و در هر بیلد از همان استفاده می‌شود تا بدون حذف اپ، نسخهٔ جدید روی قبلی نصب شود. پسورد: `tiknet123`. برای محیط پروداکشن می‌توانی keystore را حذف و از GitHub Secrets استفاده کنی.
 
 ## Panel API
 
