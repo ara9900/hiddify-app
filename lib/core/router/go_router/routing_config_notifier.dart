@@ -23,7 +23,7 @@ import 'package:hiddify/features/settings/overview/sections/route_options_page.d
 import 'package:hiddify/features/settings/overview/sections/tls_tricks_page.dart';
 import 'package:hiddify/features/settings/overview/sections/warp_options_page.dart';
 import 'package:hiddify/features/settings/overview/settings_page.dart';
-import 'package:hiddify/features/tiknet/login/tiknet_login_page.dart';
+import 'package:hiddify/features/tiknet/login/tiknet_login_wrapper.dart';
 import 'package:hiddify/features/tiknet/user_info/tiknet_user_info_page.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -282,7 +282,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         return null;
       },
       routes: <RouteBase>[
-        GoRoute(name: 'login', path: '/login', builder: (_, __) => const TikNetLoginPage()),
+        GoRoute(name: 'login', path: '/login', builder: (_, __) => const TikNetLoginWrapper()),
         StatefulShellRoute.indexedStack(
           builder: (_, _, navigationShell) => MyAdaptiveLayout(
             navigationShell: navigationShell,

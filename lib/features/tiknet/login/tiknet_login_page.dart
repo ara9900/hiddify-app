@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
@@ -15,11 +14,18 @@ class TikNetLoginPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final panelUrlController = useTextEditingController(text: ref.read(Preferences.tikNetPanelBaseUrl).isEmpty ? tikNetPanelBaseUrlDefault : ref.read(Preferences.tikNetPanelBaseUrl));
+    final panelUrlController = useTextEditingController();
     final usernameController = useTextEditingController();
     final passwordController = useTextEditingController();
     final isLoading = useState(false);
     final errorMsg = useState<String?>(null);
+    final savedUrl = ref.watch(Preferences.tikNetPanelBaseUrl);
+    useEffect(() {
+      if (savedUrl.isNotEmpty && panelUrlController.text.isEmpty) {
+        panelUrlController.text = savedUrl;
+      }
+      return null;
+    }, [savedUrl]);
 
     Future<void> doLogin() async {
       final baseUrl = panelUrlController.text.trim();
