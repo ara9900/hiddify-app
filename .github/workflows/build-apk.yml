@@ -17,32 +17,20 @@ jobs:
     steps:
       - name: Clone everything manually
         run: |
-          # کلون اصلی
           git clone https://github.com/ara9900/hiddify-app.git .
           
-          # کلون hiddify-core
           git clone https://github.com/hiddify/hiddify-core.git hiddify-core
           cd hiddify-core
           git checkout 97e1b2fc936cf7929336a89e77cbaaa4742ad557
           
-          # کلون sing-box
           git clone https://github.com/hiddify/hiddify-sing-box.git hiddify-sing-box
-          
-          # کلون ray2sing
           git clone https://github.com/hiddify/ray2sing.git ray2sing
           
           cd ..
           
-          echo "=== Root ==="
-          ls -la
-          echo "=== Core ==="
-          ls hiddify-core/
-          echo "=== ray2sing ==="
-          ls hiddify-core/ray2sing/
-          echo "=== sing-box ==="
-          ls hiddify-core/hiddify-sing-box/
-          echo ""
           echo "✅ All cloned!"
+          ls -la
+          ls hiddify-core/
 
       - name: Clean up disk
         run: |
@@ -55,10 +43,14 @@ jobs:
 
       - name: Add Swap
         run: |
-          sudo fallocate -l 8G /swapfile
+          sudo swapoff /swapfile 2>/dev/null || true
+          sudo rm -f /swapfile 2>/dev/null || true
+          sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
+          free -h
+        continue-on-error: true
 
       - name: Setup Java
         uses: actions/setup-java@v4
