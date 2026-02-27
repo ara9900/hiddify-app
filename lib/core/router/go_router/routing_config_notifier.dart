@@ -64,30 +64,28 @@ int getIndexOfBranch(bool isMobileBreakpoint, bool showProfilesAction, String na
 class RoutingConfigNotifier extends _$RoutingConfigNotifier {
   @override
   RoutingConfig build() {
-    final isMobileBreakpoint = ref.watch(isMobileBreakpointProvider);
     final tikNet = tikNetMode;
-    ref.watch(Preferences.tikNetAccessToken);
-    final tikNetLoggedIn = ref.read(Preferences.tikNetAccessToken).trim().isNotEmpty;
 
-    // In TikNet mode always build full config so redirect to /login runs (avoid black loadingConfig screen).
+    // TikNet: build config immediately without waiting for breakpoint/profile (avoids black screen).
+    if (tikNet) {
+      ref.watch(Preferences.tikNetAccessToken);
+      final tikNetLoggedIn = ref.read(Preferences.tikNetAccessToken).trim().isNotEmpty;
+      final effectiveMobile = true;
+      return _buildTikNetConfig(tikNetLoggedIn, effectiveMobile);
+    }
+
+    final isMobileBreakpoint = ref.watch(isMobileBreakpointProvider);
     final bool showProfilesAction;
     if (isMobileBreakpoint == true) {
       showProfilesAction = false;
     } else {
       showProfilesAction = ref.watch(hasAnyProfileProvider).value ?? false;
     }
-    if (!tikNet && isMobileBreakpoint == null) return loadingConfig;
-
-    // When breakpoint still null, treat as mobile for layout (bool? -> bool).
-    final effectiveMobile = isMobileBreakpoint ?? true;
+    if (isMobileBreakpoint == null) return loadingConfig;
+    final effectiveMobile = isMobileBreakpoint;
 
     return RoutingConfig(
       redirect: (context, state) {
-        if (tikNet) {
-          if (!tikNetLoggedIn && !state.matchedLocation.startsWith('/login')) return '/login';
-          if (tikNetLoggedIn && state.matchedLocation == '/login') return '/home';
-        }
-
         final introCompleted = ref.read(Preferences.introCompleted);
         final isIntro = state.matchedLocation == '/intro';
         // fix path-parameters for deep link
@@ -118,55 +116,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         return null;
       },
       routes: <RouteBase>[
-        GoRoute(name: 'login', path: '/login', builder: (_, __) => const TikNetLoginPage()),
-        if (tikNet)
-          StatefulShellRoute.indexedStack(
-            builder: (_, _, navigationShell) => MyAdaptiveLayout(
-              navigationShell: navigationShell,
-              isMobileBreakpoint: effectiveMobile,
-              showProfilesAction: false,
-              tikNetMode: true,
-            ),
-            branches: <StatefulShellBranch>[
-              StatefulShellBranch(
-                routes: <GoRoute>[
-                  GoRoute(
-                    name: 'home',
-                    path: '/home',
-                    builder: (_, _) => FocusScope(node: branchesScope['home'], child: const HomePage()),
-                    routes: <GoRoute>[
-                      GoRoute(
-                        name: 'proxies',
-                        path: '/proxies',
-                        pageBuilder: (_, state) =>
-                            customTransition(TransitionType.fade, state.pageKey, const ProxiesOverviewPage()),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              StatefulShellBranch(
-                routes: <GoRoute>[
-                  GoRoute(
-                    name: 'perAppProxy',
-                    path: '/per-app-proxy',
-                    builder: (_, _) => FocusScope(node: branchesScope['perAppProxy'], child: const PerAppProxyPage()),
-                  ),
-                ],
-              ),
-              StatefulShellBranch(
-                routes: <GoRoute>[
-                  GoRoute(
-                    name: 'userInfo',
-                    path: '/user-info',
-                    builder: (_, _) => FocusScope(node: branchesScope['userInfo'], child: const TikNetUserInfoPage()),
-                  ),
-                ],
-              ),
-            ],
-          )
-        else
-          StatefulShellRoute.indexedStack(
+        StatefulShellRoute.indexedStack(
           builder: (_, _, navigationShell) => MyAdaptiveLayout(
             navigationShell: navigationShell,
             isMobileBreakpoint: effectiveMobile,
@@ -320,6 +270,64 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
           ],
         ),
         GoRoute(name: 'intro', path: '/intro', builder: (_, _) => const IntroPage()),
+      ],
+    );
+  }
+
+  RoutingConfig _buildTikNetConfig(bool tikNetLoggedIn, bool effectiveMobile) {
+    return RoutingConfig(
+      redirect: (context, state) {
+        if (!tikNetLoggedIn && !state.matchedLocation.startsWith('/login')) return '/login';
+        if (tikNetLoggedIn && state.matchedLocation == '/login') return '/home';
+        return null;
+      },
+      routes: <RouteBase>[
+        GoRoute(name: 'login', path: '/login', builder: (_, __) => const TikNetLoginPage()),
+        StatefulShellRoute.indexedStack(
+          builder: (_, _, navigationShell) => MyAdaptiveLayout(
+            navigationShell: navigationShell,
+            isMobileBreakpoint: effectiveMobile,
+            showProfilesAction: false,
+            tikNetMode: true,
+          ),
+          branches: <StatefulShellBranch>[
+            StatefulShellBranch(
+              routes: <GoRoute>[
+                GoRoute(
+                  name: 'home',
+                  path: '/home',
+                  builder: (_, _) => FocusScope(node: branchesScope['home'], child: const HomePage()),
+                  routes: <GoRoute>[
+                    GoRoute(
+                      name: 'proxies',
+                      path: '/proxies',
+                      pageBuilder: (_, state) =>
+                          customTransition(TransitionType.fade, state.pageKey, const ProxiesOverviewPage()),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: <GoRoute>[
+                GoRoute(
+                  name: 'perAppProxy',
+                  path: '/per-app-proxy',
+                  builder: (_, _) => FocusScope(node: branchesScope['perAppProxy'], child: const PerAppProxyPage()),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: <GoRoute>[
+                GoRoute(
+                  name: 'userInfo',
+                  path: '/user-info',
+                  builder: (_, _) => FocusScope(node: branchesScope['userInfo'], child: const TikNetUserInfoPage()),
+                ),
+              ],
+            ),
+          ],
+        ),
       ],
     );
   }
