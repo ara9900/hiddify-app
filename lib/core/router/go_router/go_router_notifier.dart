@@ -15,6 +15,8 @@ class GoRouterNotifer extends _$GoRouterNotifer {
   static final rConfig = ValueNotifier<RoutingConfig>(loadingConfig);
   @override
   GoRouter build() {
+    // Set config immediately so first frame has correct routes (avoids black screen when initialLocation is /login).
+    rConfig.value = ref.read(routingConfigNotifierProvider);
     ref.listen(routingConfigNotifierProvider, (_, next) => rConfig.value = next);
     return GoRouter.routingConfig(
       initialLocation: tikNetMode ? '/login' : '/home',

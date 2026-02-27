@@ -67,11 +67,14 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
     final tikNet = tikNetMode;
 
     // TikNet: build config immediately without waiting for breakpoint/profile (avoids black screen).
+    // If reading token throws (e.g. SharedPreferences not ready), assume not logged in.
     if (tikNet) {
-      ref.watch(Preferences.tikNetAccessToken);
-      final tikNetLoggedIn = ref.read(Preferences.tikNetAccessToken).trim().isNotEmpty;
-      final effectiveMobile = true;
-      return _buildTikNetConfig(tikNetLoggedIn, effectiveMobile);
+      bool tikNetLoggedIn = false;
+      try {
+        ref.watch(Preferences.tikNetAccessToken);
+        tikNetLoggedIn = ref.read(Preferences.tikNetAccessToken).trim().isNotEmpty;
+      } catch (_) {}
+      return _buildTikNetConfig(tikNetLoggedIn, true);
     }
 
     final isMobileBreakpoint = ref.watch(isMobileBreakpointProvider);
