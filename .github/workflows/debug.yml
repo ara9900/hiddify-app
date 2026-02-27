@@ -1,0 +1,68 @@
+name: Debug Info
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (no submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Fix submodule URL and clone
+        run: |
+          echo "=== Fix SSH to HTTPS ==="
+          sed -i 's|ssh://git@github.com/|https://github.com/|g' .gitmodules
+          sed -i 's|git@github.com:|https://github.com/|g' .gitmodules
+          cat .gitmodules
+          
+          echo ""
+          echo "=== Sync and Update ==="
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+      - name: Show Makefile
+        run: |
+          echo "============ FULL MAKEFILE ============"
+          cat Makefile
+
+      - name: Show CI and Release
+        run: |
+          echo "============ ci.yml ============"
+          cat .github/workflows/ci.yml 2>/dev/null || echo "NONE"
+          echo ""
+          echo "============ release.yml ============"
+          cat .github/workflows/release.yml 2>/dev/null || echo "NONE"
+
+      - name: Show Structure
+        run: |
+          echo "============ ROOT ============"
+          ls -la
+          echo ""
+          echo "============ hiddify-core contents ============"
+          ls -la hiddify-core/ 2>/dev/null || echo "EMPTY"
+          echo ""
+          echo "============ ALL DIRS ============"
+          find . -maxdepth 3 -type d | grep -v '.git/' | sort
+          echo ""
+          echo "============ go.mod files ============"
+          find . -name "go.mod" -maxdepth 4
+          echo ""
+          echo "============ .sh files ============"
+          find . -name "*.sh" -maxdepth 3
+          echo ""
+          echo "============ pubspec.yaml ============"
+          cat pubspec.yaml | head -50
+          echo ""
+          echo "============ android/app/build.gradle ============"
+          cat android/app/build.gradle 2>/dev/null | head -80
+          echo ""
+          echo "============ android/app/libs/ ============"
+          ls -la android/app/libs/ 2>/dev/null || echo "EMPTY"
+          echo ""
+          echo "============ .gitmodules ============"
+          cat .gitmodules
