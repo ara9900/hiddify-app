@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/adaptive_layout/my_adaptive_layout.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
@@ -22,6 +23,8 @@ import 'package:hiddify/features/settings/overview/sections/route_options_page.d
 import 'package:hiddify/features/settings/overview/sections/tls_tricks_page.dart';
 import 'package:hiddify/features/settings/overview/sections/warp_options_page.dart';
 import 'package:hiddify/features/settings/overview/settings_page.dart';
+import 'package:hiddify/features/tiknet/login/tiknet_login_page.dart';
+import 'package:hiddify/features/tiknet/user_info/tiknet_user_info_page.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -34,6 +37,8 @@ final branchesScope = <String, FocusScopeNode>{
   'settings': FocusScopeNode(),
   'logs': FocusScopeNode(),
   'about': FocusScopeNode(),
+  'userInfo': FocusScopeNode(),
+  'perAppProxy': FocusScopeNode(),
 };
 
 // when the routing config is not yet initialized, this config is used
@@ -41,13 +46,19 @@ final loadingConfig = RoutingConfig(
   routes: <RouteBase>[GoRoute(path: '/home', builder: (context, state) => const Material())],
 );
 
-String getNameOfBranch(bool isMobileBreakpoint, bool showProfilesAction, int index) => isMobileBreakpoint
-    ? ['home', 'settings'][index]
-    : ['home', if (showProfilesAction) 'profiles', 'settings', 'logs', 'about'][index];
+String getNameOfBranch(bool isMobileBreakpoint, bool showProfilesAction, int index, {bool tikNet = false}) {
+  if (tikNet) return ['home', 'perAppProxy', 'userInfo'][index];
+  return isMobileBreakpoint
+      ? ['home', 'settings'][index]
+      : ['home', if (showProfilesAction) 'profiles', 'settings', 'logs', 'about'][index];
+}
 
-int getIndexOfBranch(bool isMobileBreakpoint, bool showProfilesAction, String name) => isMobileBreakpoint
-    ? ['home', 'settings'].indexOf(name)
-    : ['home', if (showProfilesAction) 'profiles', 'settings', 'logs', 'about'].indexOf(name);
+int getIndexOfBranch(bool isMobileBreakpoint, bool showProfilesAction, String name, {bool tikNet = false}) {
+  if (tikNet) return ['home', 'perAppProxy', 'userInfo'].indexOf(name);
+  return isMobileBreakpoint
+      ? ['home', 'settings'].indexOf(name)
+      : ['home', if (showProfilesAction) 'profiles', 'settings', 'logs', 'about'].indexOf(name);
+}
 
 @Riverpod(keepAlive: true)
 class RoutingConfigNotifier extends _$RoutingConfigNotifier {
@@ -61,8 +72,17 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
       showProfilesAction = ref.watch(hasAnyProfileProvider).value ?? false;
     }
     if (isMobileBreakpoint == null) return loadingConfig;
+    final tikNet = tikNetMode;
+    ref.watch(Preferences.tikNetAccessToken);
+    final tikNetLoggedIn = ref.read(Preferences.tikNetAccessToken).trim().isNotEmpty;
+
     return RoutingConfig(
       redirect: (context, state) {
+        if (tikNet) {
+          if (!tikNetLoggedIn && !state.matchedLocation.startsWith('/login')) return '/login';
+          if (tikNetLoggedIn && state.matchedLocation == '/login') return '/home';
+        }
+
         final introCompleted = ref.read(Preferences.introCompleted);
         final isIntro = state.matchedLocation == '/intro';
         // fix path-parameters for deep link
@@ -93,7 +113,55 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         return null;
       },
       routes: <RouteBase>[
-        StatefulShellRoute.indexedStack(
+        GoRoute(name: 'login', path: '/login', builder: (_, __) => const TikNetLoginPage()),
+        if (tikNet)
+          StatefulShellRoute.indexedStack(
+            builder: (_, _, navigationShell) => MyAdaptiveLayout(
+              navigationShell: navigationShell,
+              isMobileBreakpoint: isMobileBreakpoint,
+              showProfilesAction: false,
+              tikNetMode: true,
+            ),
+            branches: <StatefulShellBranch>[
+              StatefulShellBranch(
+                routes: <GoRoute>[
+                  GoRoute(
+                    name: 'home',
+                    path: '/home',
+                    builder: (_, _) => FocusScope(node: branchesScope['home'], child: const HomePage()),
+                    routes: <GoRoute>[
+                      GoRoute(
+                        name: 'proxies',
+                        path: '/proxies',
+                        pageBuilder: (_, state) =>
+                            customTransition(TransitionType.fade, state.pageKey, const ProxiesOverviewPage()),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              StatefulShellBranch(
+                routes: <GoRoute>[
+                  GoRoute(
+                    name: 'perAppProxy',
+                    path: '/per-app-proxy',
+                    builder: (_, _) => FocusScope(node: branchesScope['perAppProxy'], child: const PerAppProxyPage()),
+                  ),
+                ],
+              ),
+              StatefulShellBranch(
+                routes: <GoRoute>[
+                  GoRoute(
+                    name: 'userInfo',
+                    path: '/user-info',
+                    builder: (_, _) => FocusScope(node: branchesScope['userInfo'], child: const TikNetUserInfoPage()),
+                  ),
+                ],
+              ),
+            ],
+          )
+        else
+          StatefulShellRoute.indexedStack(
           builder: (_, _, navigationShell) => MyAdaptiveLayout(
             navigationShell: navigationShell,
             isMobileBreakpoint: isMobileBreakpoint,

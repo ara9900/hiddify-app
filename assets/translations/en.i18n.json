@@ -1,6 +1,6 @@
 {
   "common": {
-    "appTitle": "Hiddify",
+    "appTitle": "TikNet",
     "start": "Start",
     "version": "Version",
     "ok": "OK",
@@ -91,6 +91,24 @@
     "info(rich)": "Made with ❤️ by Hiddify - ${tap_source(Open Source)} (${tap_license(License)})"
   },
   "pages": {
+    "tiknetLogin": {
+      "title": "Login",
+      "panelUrl": "Panel URL",
+      "username": "Username",
+      "password": "Password",
+      "login": "Login",
+      "loggingIn": "Logging in...",
+      "error": "Login failed"
+    },
+    "tiknetUserInfo": {
+      "title": "My account",
+      "username": "Username",
+      "expireDate": "Expiry date",
+      "hasSubscription": "Subscription",
+      "active": "Active",
+      "inactive": "Inactive",
+      "logout": "Logout"
+    },
     "home": {
       "title": "Home",
       "quickSettings": "Quick settings"

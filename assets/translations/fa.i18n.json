@@ -1,6 +1,6 @@
 {
   "common": {
-    "appTitle": "هیدیفای",
+    "appTitle": "تیک‌نت",
     "start": "شروع",
     "version": "نسخه",
     "ok": "باشه",
@@ -91,6 +91,24 @@
     "info(rich)": "ساخته شده با ❤️ توسط هیدیفای - ${tap_source(متن‌باز)} (${tap_license(مجوز)})"
   },
   "pages": {
+    "tiknetLogin": {
+      "title": "ورود",
+      "panelUrl": "آدرس پنل",
+      "username": "نام کاربری",
+      "password": "رمز عبور",
+      "login": "ورود",
+      "loggingIn": "در حال ورود...",
+      "error": "ورود ناموفق بود"
+    },
+    "tiknetUserInfo": {
+      "title": "حساب من",
+      "username": "نام کاربری",
+      "expireDate": "تاریخ انقضا",
+      "hasSubscription": "اشتراک",
+      "active": "فعال",
+      "inactive": "غیرفعال",
+      "logout": "خروج"
+    },
     "home": {
       "title": "خانه",
       "quickSettings": "تنظیمات سریع"

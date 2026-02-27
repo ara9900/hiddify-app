@@ -1,0 +1,130 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+
+env:
+  IS_GITHUB_ACTIONS: 1
+  CHANNEL: "dev"
+  FLUTTER_VERSION: '3.38.5'
+  NDK_VERSION: r28c
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions: write-all
+
+    steps:
+      - name: Clone everything manually
+        run: |
+          git clone https://github.com/ara9900/hiddify-app.git .
+          
+          git clone https://github.com/hiddify/hiddify-core.git hiddify-core
+          cd hiddify-core
+          git checkout 97e1b2fc936cf7929336a89e77cbaaa4742ad557
+          
+          git clone https://github.com/hiddify/hiddify-sing-box.git hiddify-sing-box
+          git clone https://github.com/hiddify/ray2sing.git ray2sing
+          
+          cd ..
+          
+          echo "✅ All cloned!"
+          ls -la
+          ls hiddify-core/
+
+      - name: Clean up disk
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          df -h
+
+      - name: Add Swap
+        run: |
+          sudo swapoff /swapfile 2>/dev/null || true
+          sudo rm -f /swapfile 2>/dev/null || true
+          sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+        continue-on-error: true
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Show Makefile targets
+        run: grep -E 'android' Makefile | head -30
+
+      - name: Install deps
+        run: |
+          make android-apk-install-deps || make android-aab-install-deps || echo "manual"
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+
+      - name: Prepare
+        run: |
+          make android-apk-prepare || make android-aab-prepare || echo "done"
+
+      - name: Build APK
+        run: |
+          make android-apk-release || flutter build apk --release --split-per-abi
+
+      - name: Collect APKs
+        run: |
+          mkdir -p out
+          
+          # کپی با اسم‌های مشخص
+          cp ./build/app/outputs/flutter-apk/app-arm64-v8a-release.apk out/Hiddify-arm64.apk 2>/dev/null || true
+          cp ./build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk out/Hiddify-arm7.apk 2>/dev/null || true
+          cp ./build/app/outputs/flutter-apk/app-x86_64-release.apk out/Hiddify-x86_64.apk 2>/dev/null || true
+          cp ./build/app/outputs/flutter-apk/app-release.apk out/Hiddify-universal.apk 2>/dev/null || true
+          
+          echo "=== APK Files ==="
+          ls -lh out/
+
+      - name: Upload ARM64 (گوشی‌های جدید)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hiddify-ARM64-50MB
+          path: ./out/Hiddify-arm64.apk
+          retention-days: 30
+        if: always()
+
+      - name: Upload ARM7 (گوشی‌های قدیمی)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hiddify-ARM7-40MB
+          path: ./out/Hiddify-arm7.apk
+          retention-days: 30
+        if: always()
+
+      - name: Upload x86_64 (امولاتور)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hiddify-x86_64-60MB
+          path: ./out/Hiddify-x86_64.apk
+          retention-days: 30
+        if: always()
+
+      - name: Upload Universal (همه)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hiddify-Universal-150MB
+          path: ./out/Hiddify-universal.apk
+          retention-days: 30
+        if: always()

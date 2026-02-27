@@ -16,11 +16,13 @@ class MyAdaptiveLayout extends HookConsumerWidget {
     required this.navigationShell,
     required this.isMobileBreakpoint,
     required this.showProfilesAction,
+    this.tikNetMode = false,
   });
   // managed by go router(Shell Route)
   final StatefulNavigationShell navigationShell;
   final bool isMobileBreakpoint;
   final bool showProfilesAction;
+  final bool tikNetMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,7 +42,7 @@ class MyAdaptiveLayout extends HookConsumerWidget {
             if (branchesScope.values.any((node) => node.hasFocus)) {
               navScopeNode.requestFocus();
             } else if (navScopeNode.hasFocus) {
-              branchesScope[getNameOfBranch(isMobileBreakpoint, showProfilesAction, navigationShell.currentIndex)]
+              branchesScope[getNameOfBranch(isMobileBreakpoint, showProfilesAction, navigationShell.currentIndex, tikNet: tikNetMode)]
                   ?.requestFocus();
             }
           }
@@ -63,7 +65,7 @@ class MyAdaptiveLayout extends HookConsumerWidget {
                     node: navScopeNode,
                     child: NavigationRail(
                       extended: Breakpoint(context).isDesktop(),
-                      destinations: _navRailDests(_actions(t, showProfilesAction, isMobileBreakpoint)),
+                      destinations: _navRailDests(_actions(t, showProfilesAction, isMobileBreakpoint, tikNetMode)),
                       selectedIndex: navigationShell.currentIndex,
                       onDestinationSelected: (index) => _onTap(context, index),
                       trailing: Breakpoint(context).isDesktop()
@@ -83,8 +85,8 @@ class MyAdaptiveLayout extends HookConsumerWidget {
             ? FocusScope(
                 node: navScopeNode,
                 child: NavigationBar(
-                  selectedIndex: navigationShell.currentIndex <= 1 ? navigationShell.currentIndex : 0,
-                  destinations: _navDests(_actions(t, showProfilesAction, isMobileBreakpoint)),
+                  selectedIndex: navigationShell.currentIndex <= (tikNetMode ? 2 : 1) ? navigationShell.currentIndex : 0,
+                  destinations: _navDests(_actions(t, showProfilesAction, isMobileBreakpoint, tikNetMode)),
                   onDestinationSelected: (index) => _onTap(context, index),
                 ),
               )
@@ -98,13 +100,22 @@ class MyAdaptiveLayout extends HookConsumerWidget {
     navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
   }
 
-  List<ShellRouteAction> _actions(Translations t, bool showProfilesAction, bool isMobileBreakpoint) => [
-    ShellRouteAction(Icons.power_settings_new_rounded, t.pages.home.title),
-    if (showProfilesAction && !isMobileBreakpoint) ShellRouteAction(Icons.view_list_rounded, t.pages.profiles.title),
-    ShellRouteAction(Icons.settings_rounded, t.pages.settings.title),
-    if (!isMobileBreakpoint) ShellRouteAction(Icons.description_rounded, t.pages.logs.title),
-    if (!isMobileBreakpoint) ShellRouteAction(Icons.info_rounded, t.pages.about.title),
-  ];
+  List<ShellRouteAction> _actions(Translations t, bool showProfilesAction, bool isMobileBreakpoint, bool tikNetMode) {
+    if (tikNetMode) {
+      return [
+        ShellRouteAction(Icons.power_settings_new_rounded, t.pages.home.title),
+        ShellRouteAction(Icons.apps_rounded, 'App filter'),
+        ShellRouteAction(Icons.person_rounded, 'My account'),
+      ];
+    }
+    return [
+      ShellRouteAction(Icons.power_settings_new_rounded, t.pages.home.title),
+      if (showProfilesAction && !isMobileBreakpoint) ShellRouteAction(Icons.view_list_rounded, t.pages.profiles.title),
+      ShellRouteAction(Icons.settings_rounded, t.pages.settings.title),
+      if (!isMobileBreakpoint) ShellRouteAction(Icons.description_rounded, t.pages.logs.title),
+      if (!isMobileBreakpoint) ShellRouteAction(Icons.info_rounded, t.pages.about.title),
+    ];
+  }
 
   List<NavigationDestination> _navDests(List<ShellRouteAction> actions) =>
       actions.map((e) => NavigationDestination(icon: Icon(e.icon), label: e.title)).toList();

@@ -110,6 +110,11 @@ abstract class Preferences {
     mapFrom: ActionsAtClosing.values.byName,
     mapTo: (value) => value.name,
   );
+
+  /// TikNet: panel API base URL (e.g. https://panel.example.com)
+  static final tikNetPanelBaseUrl = PreferencesNotifier.create<String, String>("tiknet_panel_base_url", "");
+  /// TikNet: JWT access token after login
+  static final tikNetAccessToken = PreferencesNotifier.create<String, String>("tiknet_access_token", "");
 }
 
 @Riverpod(keepAlive: true)
