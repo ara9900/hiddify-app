@@ -283,10 +283,21 @@ class _AnnouncementBox extends ConsumerWidget {
 
   static Color _colorForType(String type) {
     return switch (type.toLowerCase()) {
-      'warning' => const Color(0xFFEAB308),
+      'warning' => const Color(0xFFEAB308), // نارنجی/زرد
+      'info' => const Color(0xFF3B82F6),   // آبی
       'error' => TikNetColors.error,
       'success' => TikNetColors.connected,
       _ => TikNetColors.primary,
+    };
+  }
+
+  static IconData _iconForType(String type) {
+    return switch (type.toLowerCase()) {
+      'warning' => Icons.warning_amber_rounded,
+      'info' => Icons.info_outline_rounded,
+      'error' => Icons.error_outline_rounded,
+      'success' => Icons.check_circle_outline_rounded,
+      _ => Icons.info_outline_rounded,
     };
   }
 
@@ -294,8 +305,8 @@ class _AnnouncementBox extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(announcementProvider);
     return async.when(
-      data: (AnnouncementMessage? message) {
-        if (message == null || !message.show || message.text.isEmpty) return const SizedBox.shrink();
+      data: (AnnouncementMessage message) {
+        if (!message.show || message.text.isEmpty) return const SizedBox.shrink();
         final color = _colorForType(message.type);
         return Card(
           color: color.withValues(alpha: 0.15),
@@ -304,7 +315,7 @@ class _AnnouncementBox extends ConsumerWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline_rounded, color: color, size: 22),
+                Icon(_iconForType(message.type), color: color, size: 22),
                 const Gap(12),
                 Expanded(
                   child: Text(
