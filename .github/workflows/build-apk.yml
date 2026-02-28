@@ -118,7 +118,7 @@ jobs:
               if w > MAX or h > MAX:
                 ratio = min(MAX / w, MAX / h)
                 img = img.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)
-              img.save(path, 'PNG', format='PNG', compress_level=6)
+              img.save(path, 'PNG', compress_level=6)
               print(f"Fixed: {path}")
           EOF
 
