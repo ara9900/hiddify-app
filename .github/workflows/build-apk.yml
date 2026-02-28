@@ -101,6 +101,17 @@ jobs:
         run: |
           make android-apk-prepare || make android-aab-prepare || echo "done"
 
+      # اصلاح PNGهای TikNet برای سازگاری با AAPT2 (عمق ۸-bit، حذف متادیتا)
+      - name: Fix TikNet PNGs for AAPT2
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y imagemagick -qq
+          for f in android/app/src/main/res/drawable/tiknet_splash.png android/app/src/main/res/drawable/tiknet_launcher_foreground.png; do
+            if [ -f "$f" ]; then
+              convert "$f" -strip -depth 8 -define png:color-type=6 "${f}.tmp" && mv "${f}.tmp" "$f"
+              echo "Fixed: $f"
+            fi
+          done
+
       - name: Build APK
         run: |
           make android-apk-release || flutter build apk --release --split-per-abi
