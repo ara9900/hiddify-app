@@ -305,8 +305,8 @@ class _AnnouncementBox extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(announcementProvider);
     return async.when(
-      data: (AnnouncementMessage message) {
-        if (!message.show || message.text.isEmpty) return const SizedBox.shrink();
+      data: (AnnouncementMessage? message) {
+        if (message == null || !message.show || message.text.isEmpty) return const SizedBox.shrink();
         final color = _colorForType(message.type);
         return Card(
           color: color.withValues(alpha: 0.15),
