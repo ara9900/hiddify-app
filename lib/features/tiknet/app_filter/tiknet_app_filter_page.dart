@@ -91,82 +91,97 @@ class TikNetAppFilterPage extends HookConsumerWidget {
             ),
           ),
           Expanded(
-            child: asyncApps.when(
-              data: (_) => selectedApps.when(
-                data: (_) {
-                  if (filteredList.isEmpty) {
-                    return Center(
-                      child: Text(
-                        searchQuery.value.trim().isEmpty ? 'اپی یافت نشد.' : 'نتیجه‌ای برای جستجو یافت نشد.',
-                        style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
-                      ),
-                    );
-                  }
-                  return ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                    itemCount: filteredList.length,
-                    itemBuilder: (context, index) {
-                      final app = filteredList[index];
-                      final flag = selectedApps.requireValue[app.packageName];
-                      final isOn = flag != null &&
-                          (PkgFlag.userSelection.check(flag) ||
-                              (PkgFlag.autoSelection.check(flag) && !PkgFlag.forceDeselection.check(flag)));
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          leading: app.icon == null
-                              ? CircleAvatar(
-                                  backgroundColor: TikNetColors.surfaceVariant,
-                                  child: Icon(Icons.app_rounded, color: TikNetColors.onSurfaceVariant),
-                                )
-                              : CircleAvatar(
-                                  backgroundImage: MemoryImage(app.icon!),
-                                  radius: 24,
-                                ),
-                          title: Text(
-                            app.name,
-                            style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: Switch.adaptive(
-                            value: isOn,
-                            onChanged: (_) =>
-                                ref.read(PerAppProxyProvider(mode).notifier).updatePkg(app.packageName),
-                            activeColor: TikNetColors.primary,
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'خطا در بارگذاری لیست.',
-                      style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.error),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              ),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, __) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'خطا در بارگذاری اپ‌ها.',
-                    style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.error),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-            ),
+            child: _buildAppsList(context, ref, theme, asyncApps, selectedApps, filteredList, searchQuery.value, mode),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAppsList(
+    BuildContext context,
+    WidgetRef ref,
+    ThemeData theme,
+    AsyncSnapshot<Set<AppPackageInfo>> asyncApps,
+    AsyncValue<Map<String, int>> selectedApps,
+    List<AppPackageInfo> filteredList,
+    String searchQueryValue,
+    AppProxyMode? mode,
+  ) {
+    if (asyncApps.connectionState == ConnectionState.waiting || !asyncApps.hasData) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (asyncApps.hasError) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'خطا در بارگذاری اپ‌ها.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.error),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return selectedApps.when(
+      data: (_) {
+        if (filteredList.isEmpty) {
+          return Center(
+            child: Text(
+              searchQueryValue.trim().isEmpty ? 'اپی یافت نشد.' : 'نتیجه‌ای برای جستجو یافت نشد.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          itemCount: filteredList.length,
+          itemBuilder: (context, index) {
+            final app = filteredList[index];
+            final flag = selectedApps.requireValue[app.packageName];
+            final isOn = flag != null &&
+                (PkgFlag.userSelection.check(flag) ||
+                    (PkgFlag.autoSelection.check(flag) && !PkgFlag.forceDeselection.check(flag)));
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                leading: app.icon == null
+                    ? CircleAvatar(
+                        backgroundColor: TikNetColors.surfaceVariant,
+                        child: Icon(Icons.apps_rounded, color: TikNetColors.onSurfaceVariant),
+                      )
+                    : CircleAvatar(
+                        backgroundImage: MemoryImage(app.icon!),
+                        radius: 24,
+                      ),
+                title: Text(
+                  app.name,
+                  style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Switch.adaptive(
+                  value: isOn,
+                  onChanged: (_) =>
+                      ref.read(PerAppProxyProvider(mode).notifier).updatePkg(app.packageName),
+                  activeColor: TikNetColors.primary,
+                ),
+              ),
+            );
+          },
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'خطا در بارگذاری لیست.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.error),
+            textAlign: TextAlign.center,
+          ),
+        ),
       ),
     );
   }

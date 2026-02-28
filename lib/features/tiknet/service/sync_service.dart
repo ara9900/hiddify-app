@@ -35,7 +35,7 @@ class SyncService {
     try {
       final profile = await api.getMe(baseUrl: baseUrl, accessToken: token);
       final profileJson = _profileToJson(profile);
-      await _ref.read(Preferences.tikNetCachedProfile.notifier).update(profileJson);
+      await _ref.read(Preferences.tikNetCachedProfile.notifier).update(jsonEncode(profileJson));
 
       final configBytes = await api.getSubscriptionConfig(baseUrl: baseUrl, accessToken: token);
       final configBase64 = base64Encode(configBytes);

@@ -24,7 +24,7 @@ class AuthService {
     final configService = _ref.read(configServiceProvider);
     final baseUrl = await configService.getFirstWorkingPanelUrl();
     if (baseUrl.isEmpty) {
-      throw const AuthException('اتصال به سرور ممکن نیست');
+      throw AuthException('اتصال به سرور ممکن نیست');
     }
 
     final dio = Dio(BaseOptions(
@@ -41,14 +41,14 @@ class AuthService {
         data: {'username': username.trim(), 'password': password},
       );
       final data = response.data;
-      if (data == null) throw const AuthException('پاسخ خالی از سرور');
+      if (data == null) throw AuthException('پاسخ خالی از سرور');
 
       final accessToken = data['access_token'] as String? ?? '';
       final expiresIn = (data['expires_in'] as num?)?.toInt() ?? 0;
       final subscriptionUrl = data['subscription_url'] as String?;
 
       if (accessToken.isEmpty) {
-        throw const AuthException('پاسخ سرور نامعتبر است');
+        throw AuthException('پاسخ سرور نامعتبر است');
       }
 
       // expires_in is relative (seconds from now); store absolute expiry for isLoggedIn().
@@ -66,7 +66,7 @@ class AuthService {
       throw AuthException(message);
     } catch (e) {
       if (e is AuthException) rethrow;
-      throw const AuthException('اتصال به سرور ممکن نیست');
+      throw AuthException('اتصال به سرور ممکن نیست');
     }
   }
 

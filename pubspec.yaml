@@ -172,6 +172,8 @@ flutter:
     - assets/images/disconnect_norouz.PNG
     - assets/images/world_map.png
     - assets/images/source/ic_launcher_border.png
+    - assets/images/tiknet_shield.png
+    - assets/images/tiknet_splash.png
 
   fonts:
     - family: Shabnam
@@ -190,12 +192,13 @@ flutter_gen:
     flutter_svg: true
 
 flutter_native_splash:
-  color: "#ffffff"
-  image: assets/images/source/ic_launcher_splash.png
-  android_gravity: center
+  color: "#0f172a"
+  image: assets/images/tiknet_splash.png
+  android_gravity: fill
+  fullscreen: true
   android_12:
-    color: "#ffffff"
-    image: assets/images/source/ic_launcher_foreground.png
+    color: "#0f172a"
+    image: assets/images/tiknet_splash.png
 
 ffigen:
   name: "HiddifyCoreNativeLibrary"

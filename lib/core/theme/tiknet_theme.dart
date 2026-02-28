@@ -44,7 +44,7 @@ ThemeData tikNetDarkTheme(BuildContext context) {
       elevation: 0,
       scrolledUnderElevation: 0,
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: TikNetColors.surface,
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

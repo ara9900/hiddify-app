@@ -178,7 +178,11 @@ class TikNetConnectionPage extends HookConsumerWidget {
                 ],
               ),
             ),
-          );
+          ),
+        ],
+        ),
+      ),
+    );
   }
 }
 
