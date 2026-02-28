@@ -10,7 +10,10 @@ import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/widget/profile_tile.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_card.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_delay_indicator.dart';
+import 'package:hiddify/features/tiknet/connection/tiknet_connection_page.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/gen/assets.gen.dart';
+import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:sliver_tools/sliver_tools.dart';
 
@@ -19,10 +22,21 @@ class HomePage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (tikNetMode) {
+      return const TikNetConnectionPage();
+    }
+
     final theme = Theme.of(context);
     final t = ref.watch(translationsProvider).requireValue;
     // final hasAnyProfile = ref.watch(hasAnyProfileProvider);
     final activeProfile = ref.watch(activeProfileProvider);
+
+    final subscriptionExpired = () {
+      final info = ref.watch(tikNetUserInfoProvider).valueOrNull;
+      final exp = info?.expireDate;
+      return exp != null && DateTime.now().isAfter(exp);
+    }();
+    final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider).valueOrNull?.expireDate;
 
     return Scaffold(
       appBar: AppBar(
@@ -109,7 +123,7 @@ class HomePage extends HookConsumerWidget {
                           ),
                           _ => const Text(""),
                         },
-                        const SliverFillRemaining(
+                        SliverFillRemaining(
                           hasScrollBody: false,
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -118,10 +132,40 @@ class HomePage extends HookConsumerWidget {
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [ConnectionButton(), ActiveProxyDelayIndicator()],
+                                  children: [
+                                    if (subscriptionExpired && subscriptionExpiredDate != null) ...[
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        child: Card(
+                                          color: theme.colorScheme.errorContainer,
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(16),
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.warning_amber_rounded, color: theme.colorScheme.onErrorContainer),
+                                                const Gap(12),
+                                                Expanded(
+                                                  child: Text(
+                                                    'اشتراک شما در تاریخ ${formatShamsiDate(subscriptionExpiredDate)} به پایان رسیده',
+                                                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onErrorContainer),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const Gap(8),
+                                    ],
+                                    AbsorbPointer(
+                                      absorbing: subscriptionExpired,
+                                      child: const ConnectionButton(),
+                                    ),
+                                    const ActiveProxyDelayIndicator(),
+                                  ],
                                 ),
                               ),
-                              ActiveProxyFooter(),
+                              const ActiveProxyFooter(),
                             ],
                           ),
                         ),

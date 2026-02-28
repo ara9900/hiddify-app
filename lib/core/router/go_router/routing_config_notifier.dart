@@ -23,7 +23,10 @@ import 'package:hiddify/features/settings/overview/sections/route_options_page.d
 import 'package:hiddify/features/settings/overview/sections/tls_tricks_page.dart';
 import 'package:hiddify/features/settings/overview/sections/warp_options_page.dart';
 import 'package:hiddify/features/settings/overview/settings_page.dart';
+import 'package:hiddify/features/tiknet/app_filter/tiknet_app_filter_page.dart';
+import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/tiknet/login/tiknet_login_wrapper.dart';
+import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/user_info/tiknet_user_info_page.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -69,10 +72,11 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
     // TikNet: build config immediately without waiting for breakpoint/profile (avoids black screen).
     // If reading token throws (e.g. SharedPreferences not ready), assume not logged in.
     if (tikNet) {
+      ref.watch(Preferences.tikNetAccessToken);
+      ref.watch(Preferences.tikNetTokenExpiresAt);
       bool tikNetLoggedIn = false;
       try {
-        ref.watch(Preferences.tikNetAccessToken);
-        tikNetLoggedIn = ref.read(Preferences.tikNetAccessToken).trim().isNotEmpty;
+        tikNetLoggedIn = ref.read(authServiceProvider).isLoggedIn();
       } catch (_) {}
       return _buildTikNetConfig(tikNetLoggedIn, true);
     }
@@ -285,7 +289,17 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         return null;
       },
       routes: <RouteBase>[
-        GoRoute(name: 'login', path: '/login', builder: (_, __) => const TikNetLoginWrapper()),
+        GoRoute(
+          name: 'login',
+          path: '/login',
+          builder: (context, __) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: Theme(
+              data: tikNetDarkTheme(context),
+              child: const TikNetLoginWrapper(),
+            ),
+          ),
+        ),
         StatefulShellRoute.indexedStack(
           builder: (_, _, navigationShell) => MyAdaptiveLayout(
             navigationShell: navigationShell,
@@ -316,7 +330,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                 GoRoute(
                   name: 'perAppProxy',
                   path: '/per-app-proxy',
-                  builder: (_, _) => FocusScope(node: branchesScope['perAppProxy'], child: const PerAppProxyPage()),
+                  builder: (_, _) => FocusScope(node: branchesScope['perAppProxy'], child: const TikNetAppFilterPage()),
                 ),
               ],
             ),

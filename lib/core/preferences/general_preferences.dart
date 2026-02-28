@@ -115,6 +115,26 @@ abstract class Preferences {
   static final tikNetPanelBaseUrl = PreferencesNotifier.create<String, String>("tiknet_panel_base_url", "");
   /// TikNet: JWT access token after login
   static final tikNetAccessToken = PreferencesNotifier.create<String, String>("tiknet_access_token", "");
+  /// TikNet: token expiry time (stored as ISO 8601 string)
+  static final tikNetTokenExpiresAt = PreferencesNotifier.create<DateTime?, String>(
+    "tiknet_token_expires_at",
+    null,
+    mapFrom: (value) => value == null || value.isEmpty ? null : DateTime.tryParse(value),
+    mapTo: (value) => value?.toIso8601String() ?? '',
+  );
+  /// TikNet: subscription URL from login response (may be null)
+  static final tikNetSubscriptionUrl = PreferencesNotifier.create<String, String>("tiknet_subscription_url", "");
+  /// TikNet: cached profile JSON from GET /api/customer/me
+  static final tikNetCachedProfile = PreferencesNotifier.create<String, String>("tiknet_cached_profile", "");
+  /// TikNet: cached config (base64) from GET /api/customer/subscription/config
+  static final tikNetCachedConfig = PreferencesNotifier.create<String, String>("tiknet_cached_config", "");
+  /// TikNet: last successful sync time (ISO 8601)
+  static final tikNetLastSyncTime = PreferencesNotifier.create<DateTime?, String>(
+    "tiknet_last_sync_time",
+    null,
+    mapFrom: (value) => value == null || value.isEmpty ? null : DateTime.tryParse(value),
+    mapTo: (value) => value?.toIso8601String() ?? '',
+  );
 }
 
 @Riverpod(keepAlive: true)

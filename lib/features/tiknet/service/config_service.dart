@@ -21,8 +21,11 @@ final configServiceProvider = Provider<ConfigService>((ref) {
 });
 
 class ConfigService {
-  ConfigService(this._prefs);
+  ConfigService(this._prefs, {HttpClientAdapter? httpClientAdapter})
+      : _httpClientAdapter = httpClientAdapter;
+
   final SharedPreferences _prefs;
+  final HttpClientAdapter? _httpClientAdapter;
 
   List<String> _parseUrls(Map<String, dynamic>? json) {
     if (json == null) return [];
@@ -54,14 +57,21 @@ class ConfigService {
   /// Fetches config from [configJsonUrl], caches [api_urls]. On failure uses cache then [hardcodedPanelUrls].
   Future<List<String>> getPanelUrls() async {
     try {
-      final dio = Dio(BaseOptions(connectTimeout: fetchTimeout, receiveTimeout: fetchTimeout));
+      final dio = Dio(BaseOptions(
+        connectTimeout: fetchTimeout,
+        sendTimeout: fetchTimeout,
+        receiveTimeout: fetchTimeout,
+      ));
+      if (_httpClientAdapter != null) dio.httpClientAdapter = _httpClientAdapter!;
       final res = await dio.get<Map<String, dynamic>>(configJsonUrl);
       final urls = _parseUrls(res.data);
       if (urls.isNotEmpty) {
         _saveToCache(urls);
         return urls;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentional: fall back to cache then hardcoded URLs (no crash on network/config errors).
+    }
     final cached = _getCachedUrls();
     if (cached.isNotEmpty) return cached;
     return List.from(hardcodedPanelUrls);
@@ -72,7 +82,12 @@ class ConfigService {
     final urls = await getPanelUrls();
     if (urls.isEmpty) return hardcodedPanelUrls.first;
 
-    final dio = Dio(BaseOptions(connectTimeout: healthCheckTimeout, receiveTimeout: healthCheckTimeout));
+    final dio = Dio(BaseOptions(
+      connectTimeout: healthCheckTimeout,
+      sendTimeout: healthCheckTimeout,
+      receiveTimeout: healthCheckTimeout,
+    ));
+    if (_httpClientAdapter != null) dio.httpClientAdapter = _httpClientAdapter!;
     for (final base in urls) {
       final url = base.endsWith('/') ? base : '$base/';
       try {
@@ -80,7 +95,9 @@ class ConfigService {
         if (r.statusCode != null && r.statusCode! >= 200 && r.statusCode! < 400) {
           return url.replaceAll(RegExp(r'/$'), '');
         }
-      } catch (_) {}
+      } catch (_) {
+        // Skip this URL, try next (no crash on unreachable host / no internet).
+      }
     }
     return urls.first;
   }

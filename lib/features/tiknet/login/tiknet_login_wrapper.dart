@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/tiknet/login/tiknet_login_page.dart';
 
 /// Shows a simple first frame (avoids black screen), then TikNetLoginPage.
@@ -24,15 +25,17 @@ class _TikNetLoginWrapperState extends State<TikNetLoginWrapper> {
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFF5F5F5),
+      return Scaffold(
+        backgroundColor: TikNetColors.background,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('TikNet', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-              SizedBox(height: 16),
-              CircularProgressIndicator(),
+              Text('TikNet', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: TikNetColors.onBackground)),
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(color: TikNetColors.primary),
+              const SizedBox(height: 16),
+              Text('در حال بارگذاری…', style: TextStyle(color: TikNetColors.onSurfaceVariant, fontSize: 14)),
             ],
           ),
         ),

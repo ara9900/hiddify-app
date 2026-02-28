@@ -7,6 +7,7 @@ import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/router/adaptive_layout/shell_route_action.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/core/router/go_router/routing_config_notifier.dart';
+import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/stats/widget/side_bar_stats_overview.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -55,8 +56,8 @@ class MyAdaptiveLayout extends HookConsumerWidget {
         HardwareKeyboard.instance.removeHandler(handler);
       };
     }, [isMobileBreakpoint, showProfilesAction, navigationShell.currentIndex]);
-    return Material(
-      child: Scaffold(
+
+    final scaffold = Scaffold(
         body: isMobileBreakpoint
             ? navigationShell
             : Row(
@@ -91,8 +92,18 @@ class MyAdaptiveLayout extends HookConsumerWidget {
                 ),
               )
             : null,
-      ),
-    );
+      );
+
+    if (tikNetMode) {
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: Theme(
+          data: tikNetDarkTheme(context),
+          child: Material(child: scaffold),
+        ),
+      );
+    }
+    return Material(child: scaffold);
   }
 
   // shell route action onTap
@@ -103,9 +114,9 @@ class MyAdaptiveLayout extends HookConsumerWidget {
   List<ShellRouteAction> _actions(Translations t, bool showProfilesAction, bool isMobileBreakpoint, bool tikNetMode) {
     if (tikNetMode) {
       return [
-        ShellRouteAction(Icons.power_settings_new_rounded, t.pages.home.title),
-        ShellRouteAction(Icons.apps_rounded, 'App filter'),
-        ShellRouteAction(Icons.person_rounded, 'My account'),
+        ShellRouteAction(Icons.shield_rounded, 'اتصال'),
+        ShellRouteAction(Icons.apps_rounded, 'فیلتر اپ‌ها'),
+        ShellRouteAction(Icons.person_rounded, 'حساب من'),
       ];
     }
     return [
