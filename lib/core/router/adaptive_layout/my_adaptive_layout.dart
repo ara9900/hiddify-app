@@ -114,9 +114,9 @@ class MyAdaptiveLayout extends HookConsumerWidget {
   List<ShellRouteAction> _actions(Translations t, bool showProfilesAction, bool isMobileBreakpoint, bool tikNetMode) {
     if (tikNetMode) {
       return [
-        ShellRouteAction(Icons.shield_rounded, 'اتصال', iconWidget: const TikNetShieldIcon(size: 24)),
-        ShellRouteAction(Icons.apps_rounded, 'فیلتر اپ‌ها', iconWidget: const TikNetShieldIcon(size: 24)),
-        ShellRouteAction(Icons.person_rounded, 'حساب من', iconWidget: const TikNetShieldIcon(size: 24)),
+        ShellRouteAction(Icons.shield_rounded, 'اتصال'),
+        ShellRouteAction(Icons.apps_rounded, 'فیلتر اپ‌ها'),
+        ShellRouteAction(Icons.person_rounded, 'حساب من'),
       ];
     }
     return [
