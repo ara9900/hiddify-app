@@ -8,6 +8,7 @@ import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
 import 'package:hiddify/features/stats/notifier/stats_notifier.dart';
+import 'package:hiddify/features/tiknet/service/announcement_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hiddify/utils/number_formatters.dart';
@@ -138,7 +139,9 @@ class TikNetConnectionPage extends HookConsumerWidget {
                       ),
                     ),
                   ),
-                  const Gap(32),
+                  const Gap(24),
+                  const _AnnouncementBox(),
+                  const Gap(24),
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -271,6 +274,51 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AnnouncementBox extends ConsumerWidget {
+  const _AnnouncementBox();
+
+  static Color _colorForType(String type) {
+    return switch (type.toLowerCase()) {
+      'warning' => const Color(0xFFEAB308),
+      'error' => TikNetColors.error,
+      'success' => TikNetColors.connected,
+      _ => TikNetColors.primary,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(announcementProvider);
+    return async.when(
+      data: (AnnouncementMessage? message) {
+        if (message == null || !message.show || message.text.isEmpty) return const SizedBox.shrink();
+        final color = _colorForType(message.type);
+        return Card(
+          color: color.withValues(alpha: 0.15),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded, color: color, size: 22),
+                const Gap(12),
+                Expanded(
+                  child: Text(
+                    message.text,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: TikNetColors.onBackground),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }

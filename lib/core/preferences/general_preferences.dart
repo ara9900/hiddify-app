@@ -135,6 +135,8 @@ abstract class Preferences {
     mapFrom: (value) => value == null || value.isEmpty ? null : DateTime.tryParse(value),
     mapTo: (value) => value?.toIso8601String() ?? '',
   );
+  /// TikNet: آخرین پیام اعلان (JSON با message.show, message.type, message.text)
+  static final tikNetCachedAnnouncement = PreferencesNotifier.create<String, String>("tiknet_cached_announcement", "");
 }
 
 @Riverpod(keepAlive: true)
