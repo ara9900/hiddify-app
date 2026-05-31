@@ -29,6 +29,20 @@ Host the same JSON in the panel repo at **`app/static/config.json`** (served as 
 
 Then health check + login: `GET /api/health`, `POST /api/customer/login`.
 
+After login the app:
+
+1. `GET /api/customer/me` — user info (cache)
+2. `GET /api/customer/subscription/config` — raw VPN config (Bearer token; panel proxies subscription URL)
+3. Imports config into a local Hiddify profile named **TikNet** and sets it active
+
+The **بروزرسانی** button on «حساب من» runs the same sync + profile apply.
+
+Panel files (separate repo `project vpn with cursor`):
+
+- `app/routers/api.py` — `POST /api/customer/login`, `GET /api/customer/subscription/config`
+- `app/static/config.json` — public `api_urls` for app bootstrap
+- `app/services/order_service.py` — `subscription_url` on active order
+
 ## Disable TikNet mode
 
 To restore the original Hiddify UI (all tabs, no login), set in `lib/core/model/tiknet_config.dart`:

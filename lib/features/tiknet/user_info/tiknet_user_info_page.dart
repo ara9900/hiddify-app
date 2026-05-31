@@ -95,7 +95,7 @@ class TikNetUserInfoPage extends ConsumerWidget {
           FilledButton.icon(
             onPressed: () async {
               try {
-                final ok = await sync.syncAll();
+                final ok = await sync.syncAllAndApplyProfile();
                 if (context.mounted && ok) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(

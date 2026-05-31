@@ -111,6 +111,7 @@ class AuthService {
     await _ref.read(Preferences.tikNetSubscriptionUrl.notifier).update('');
     await _ref.read(Preferences.tikNetCachedProfile.notifier).update('');
     await _ref.read(Preferences.tikNetCachedConfig.notifier).update('');
+    await _ref.read(Preferences.tikNetProfileId.notifier).update('');
     await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(null);
   }
 }

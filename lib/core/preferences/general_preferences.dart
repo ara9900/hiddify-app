@@ -128,6 +128,8 @@ abstract class Preferences {
   static final tikNetCachedProfile = PreferencesNotifier.create<String, String>("tiknet_cached_profile", "");
   /// TikNet: cached config (base64) from GET /api/customer/subscription/config
   static final tikNetCachedConfig = PreferencesNotifier.create<String, String>("tiknet_cached_config", "");
+  /// TikNet: Hiddify profile id for panel config (local profile named TikNet)
+  static final tikNetProfileId = PreferencesNotifier.create<String, String>("tiknet_profile_id", "");
   /// TikNet: last successful sync time (ISO 8601)
   static final tikNetLastSyncTime = PreferencesNotifier.create<DateTime?, String>(
     "tiknet_last_sync_time",

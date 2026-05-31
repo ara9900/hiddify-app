@@ -3,10 +3,9 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
-import 'package:hiddify/features/profile/model/profile_entity.dart';
-import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/config_service.dart';
+import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class TikNetLoginPage extends HookConsumerWidget {
@@ -49,12 +48,19 @@ class TikNetLoginPage extends HookConsumerWidget {
 
         await ref.read(Preferences.introCompleted.notifier).update(true);
 
-        final subscriptionUrl = auth.getSubscriptionUrl();
-        if (subscriptionUrl != null && subscriptionUrl.isNotEmpty) {
-          await ref.read(addProfileNotifierProvider.notifier).addManual(
-                url: subscriptionUrl,
-                userOverride: UserOverride(name: 'TikNet'),
-              );
+        final sync = ref.read(syncServiceProvider);
+        try {
+          final synced = await sync.syncAllAndApplyProfile();
+          if (context.mounted && !synced) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('ورود موفق بود؛ دریافت کانفیگ از پنل ناموفق. از «حساب من» → بروزرسانی دوباره تلاش کنید.'),
+              ),
+            );
+          }
+        } on SyncTokenExpiredException {
+          if (context.mounted) context.go('/login');
+          return;
         }
 
         if (context.mounted) context.go('/home');
