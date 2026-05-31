@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 const String _githubConfigUrl = 'https://ara9900.github.io/app-config/config.json';
@@ -39,10 +40,13 @@ class AnnouncementService {
   AnnouncementService(this._ref);
   final Ref _ref;
 
-  Future<AnnouncementMessage?> fetch() async {
-    // ۱) از پنل
+  /// Fetches announcement: panel (if logged in) → GitHub → cached. Caches successful results.
+  Future<AnnouncementMessage> getMessage() async {
+    final auth = _ref.read(authServiceProvider);
     final panelUrl = _ref.read(Preferences.tikNetPanelBaseUrl);
-    if (panelUrl.isNotEmpty) {
+
+    // a) If logged in and panel base URL exists, GET panel API
+    if (auth.isLoggedIn() && panelUrl.isNotEmpty) {
       final msg = await _fetchFromPanel(panelUrl);
       if (msg != null) {
         await _saveToCache(msg);
@@ -50,15 +54,16 @@ class AnnouncementService {
       }
     }
 
-    // ۲) از GitHub
+    // b) Else GET GitHub config.json message
     final githubMsg = await _fetchFromGitHub();
     if (githubMsg != null) {
       await _saveToCache(githubMsg);
       return githubMsg;
     }
 
-    // ۳) از کش
-    return _readFromCache();
+    // c) Else read from Preferences.tikNetCachedAnnouncement; if invalid return show: false
+    final cached = _readFromCache();
+    return cached ?? AnnouncementMessage(show: false, type: 'info', text: '');
   }
 
   Future<AnnouncementMessage?> _fetchFromPanel(String baseUrl) async {
@@ -109,6 +114,6 @@ class AnnouncementService {
 
 final announcementServiceProvider = Provider<AnnouncementService>((ref) => AnnouncementService(ref));
 
-final announcementProvider = FutureProvider<AnnouncementMessage?>((ref) async {
-  return ref.read(announcementServiceProvider).fetch();
+final announcementProvider = FutureProvider<AnnouncementMessage>((ref) async {
+  return ref.read(announcementServiceProvider).getMessage();
 });

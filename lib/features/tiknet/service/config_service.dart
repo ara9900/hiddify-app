@@ -8,8 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// GitHub Pages config (may be filtered in some regions).
 const String configJsonUrl = 'https://ara9900.github.io/app-config/config.json';
 
-/// Fallback config on panel domain (same JSON: { "api_urls": [...] }).
-const String panelConfigJsonUrl = 'https://panel.tikn.ir/config.json';
+/// Fallback config on panel static (same JSON: { "api_urls": [...] }).
+const String panelConfigJsonUrl = 'https://panel.tikn.ir/static/config.json';
 
 /// Ordered config sources: GitHub → panel domain → cache → hardcoded.
 const List<String> configJsonUrls = [configJsonUrl, panelConfigJsonUrl];
@@ -81,7 +81,7 @@ class ConfigService {
     return null;
   }
 
-  /// Fetches [api_urls]: GitHub → panel.tikn.ir/config.json → cache → [hardcodedPanelUrls].
+  /// Fetches [api_urls]: GitHub → panel static config → cache → [hardcodedPanelUrls].
   Future<List<String>> getPanelUrls() async {
     for (final url in configJsonUrls) {
       final urls = await _fetchUrlsFrom(url);

@@ -21,7 +21,7 @@ jobs:
           
           git clone https://github.com/hiddify/hiddify-core.git hiddify-core
           cd hiddify-core
-          git checkout 97e1b2fc936cf7929336a89e77cbaaa4742ad557
+          git checkout a82d2b8f047ce769caad42ad9d3ab2c0ef53208a
           
           git clone https://github.com/hiddify/hiddify-sing-box.git hiddify-sing-box
           git clone https://github.com/hiddify/ray2sing.git ray2sing

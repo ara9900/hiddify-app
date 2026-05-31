@@ -15,11 +15,11 @@ This app is customized for **TikNet**: login with panel account, 3 tabs only (Co
 Panel base URL is resolved automatically (no manual entry on login):
 
 1. `GET https://ara9900.github.io/app-config/config.json` → `api_urls`
-2. If GitHub is blocked: `GET https://panel.tikn.ir/config.json` → same JSON shape
+2. If GitHub is blocked: `GET https://panel.tikn.ir/static/config.json` → same JSON shape
 3. Else cached `api_urls` on device
 4. Else hardcoded: `https://panel.tikn.ir`
 
-Host the same JSON on the panel server at **`/config.json`**:
+Host the same JSON in the panel repo at **`app/static/config.json`** (served as `/static/config.json`):
 
 ```json
 {

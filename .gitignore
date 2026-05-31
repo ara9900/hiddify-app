@@ -15,6 +15,7 @@
 migrate_working_dir/
 .github/help
 .github/tiknet-release.keystore
+tiknet.keystore
 .github/signing/
 # IntelliJ related
 *.iml

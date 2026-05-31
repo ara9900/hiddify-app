@@ -102,7 +102,7 @@ void main() {
 }
 
 /// Mock [HttpClientAdapter] that returns config JSON for config URLs and body for health URL.
-class _MockAdapter extends HttpClientAdapter {
+class _MockAdapter implements HttpClientAdapter {
   _MockAdapter({
     String? Function(String url)? onConfig,
     String? Function()? onHealth,
@@ -122,7 +122,7 @@ class _MockAdapter extends HttpClientAdapter {
     if (configJsonUrls.contains(uri)) {
       final body = _onConfig?.call(uri);
       if (body != null) {
-        return ResponseBody.fromString(body, 200, headers: {'content-type': 'application/json'});
+        return ResponseBody.fromString(body, 200, headers: {'content-type': ['application/json']});
       }
       throw Exception('config unreachable');
     }
@@ -135,4 +135,7 @@ class _MockAdapter extends HttpClientAdapter {
     }
     throw Exception('unknown request: $uri');
   }
+
+  @override
+  void close({bool force = false}) {}
 }
