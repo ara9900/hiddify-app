@@ -159,45 +159,52 @@ class HiddifyCoreService with InfraLogger {
       // final content = await File(path).readAsString();
       // loggy.debug("starting with content: $content");
       try {
-        final res = await core.bgClient.start(
-          StartRequest(
-            configPath: path,
-            configName: name,
-            // configContent: content,
-            disableMemoryLimit: disableMemoryLimit,
-          ),
-        );
-        ref.read(coreRestartSignalProvider.notifier).restart();
-        if (res.messageType != MessageType.ALREADY_STARTED && res.messageType != MessageType.EMPTY) {
-          final alert = res.message.contains("denied") ? CoreAlert.requestVPNPermission : CoreAlert.startFailed;
-          currentState = CoreStatus.stopped(
-            alert: alert,
-            message: "failed to start core ${res.messageType} ${res.message}",
-          );
+        const maxAttempts = 6;
+        for (var attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            final res = await core.bgClient.start(
+              StartRequest(
+                configPath: path,
+                configName: name,
+                disableMemoryLimit: disableMemoryLimit,
+              ),
+            );
+            ref.read(coreRestartSignalProvider.notifier).restart();
+            if (res.messageType != MessageType.ALREADY_STARTED && res.messageType != MessageType.EMPTY) {
+              final alert = res.message.contains("denied") ? CoreAlert.requestVPNPermission : CoreAlert.startFailed;
+              currentState = CoreStatus.stopped(
+                alert: alert,
+                message: "failed to start core ${res.messageType} ${res.message}",
+              );
 
-          statusController.add(currentState);
+              statusController.add(currentState);
 
-          return left(
-            currentState.getCoreAlert() ??
-                ConnectionFailure.unexpected("failed to start core ${res.messageType} ${res.message}"),
-          );
+              return left(
+                currentState.getCoreAlert() ??
+                    ConnectionFailure.unexpected("failed to start core ${res.messageType} ${res.message}"),
+              );
+            }
+            return right(unit);
+          } on GrpcError catch (e) {
+            if (e.code == StatusCode.unavailable && attempt < maxAttempts - 1) {
+              loggy.debug("bg core not ready, retry ${attempt + 1}/$maxAttempts");
+              await Future.delayed(Duration(milliseconds: 400 * (attempt + 1)));
+              continue;
+            }
+            loggy.error("failed to start bg core: $e");
+            ref.read(coreRestartSignalProvider.notifier).restart();
+            if (e.code == StatusCode.unavailable) {
+              return left(const ConnectionFailure.unexpected("background core is not started yet!"));
+            }
+            return left(const ConnectionFailure.unexpected("failed to start background core"));
+          }
         }
-      } on GrpcError catch (e) {
+        return left(const ConnectionFailure.unexpected("failed to start background core"));
+      } catch (e) {
         loggy.error("failed to start bg core: $e");
         ref.read(coreRestartSignalProvider.notifier).restart();
-        if (e.code == StatusCode.unavailable) {
-          return left(const ConnectionFailure.unexpected("background core is not started yet!"));
-        }
-        // throw InvalidConfig(e.message);
-        // throw DioException.connectionError(requestOptions: RequestOptions(), reason: e.codeName, error: e);
-
-        // throw DioException(requestOptions: RequestOptions(), error: e);
         return left(const ConnectionFailure.unexpected("failed to start background core"));
       }
-
-      // if (res.messageType != MessageType.EMPTY) return left(res);
-
-      return right(unit);
     });
   }
 

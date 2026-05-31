@@ -25,7 +25,7 @@ import 'package:hiddify/features/settings/overview/sections/warp_options_page.da
 import 'package:hiddify/features/settings/overview/settings_page.dart';
 import 'package:hiddify/features/tiknet/app_filter/tiknet_app_filter_page.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
-import 'package:hiddify/features/tiknet/login/tiknet_login_wrapper.dart';
+import 'package:hiddify/features/tiknet/login/tiknet_splash_screen.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/user_info/tiknet_user_info_page.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -296,7 +296,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
             textDirection: TextDirection.rtl,
             child: Theme(
               data: tikNetDarkTheme(context),
-              child: const TikNetLoginWrapper(),
+              child: const TikNetSplashScreen(),
             ),
           ),
         ),

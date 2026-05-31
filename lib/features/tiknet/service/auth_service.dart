@@ -20,9 +20,12 @@ class AuthService {
   static const Duration _loginTimeout = Duration(seconds: 15);
 
   /// POST /api/customer/login using panel URL from [ConfigService]. Saves token, expires_at, subscription_url.
-  Future<void> login(String username, String password) async {
+  Future<void> login(String username, String password, {String? panelBaseUrl}) async {
     final configService = _ref.read(configServiceProvider);
-    final baseUrl = await configService.getFirstWorkingPanelUrl();
+    final resolved = panelBaseUrl?.trim();
+    final baseUrl = (resolved != null && resolved.isNotEmpty)
+        ? resolved.replaceAll(RegExp(r'/+$'), '')
+        : await configService.getFirstWorkingPanelUrl();
     if (baseUrl.isEmpty) {
       throw AuthException('اتصال به سرور ممکن نیست');
     }

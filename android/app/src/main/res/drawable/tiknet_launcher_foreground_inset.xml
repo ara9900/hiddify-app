@@ -2,4 +2,4 @@
 <!-- Adaptive icon safe zone: inset foreground so shield stays inside mask -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
     android:drawable="@drawable/tiknet_launcher_foreground"
-    android:inset="22%" />
+    android:inset="18%" />

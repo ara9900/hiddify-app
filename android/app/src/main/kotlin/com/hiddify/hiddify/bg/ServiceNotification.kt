@@ -74,9 +74,9 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
         NotificationCompat.Builder(service, notificationChannel)
                 .setShowWhen(false)
                 .setOngoing(true)
-                .setContentTitle("Hiddify")
+                .setContentTitle(service.getString(R.string.app_name))
                 .setOnlyAlertOnce(true)
-                .setSmallIcon(R.drawable.ic_stat_logo)
+                .setSmallIcon(R.drawable.ic_stat_tiknet)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .setContentIntent(
                         PendingIntent.getActivity(
@@ -109,13 +109,13 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Application.notification.createNotificationChannel(
                 NotificationChannel(
-                    notificationChannel, "hiddify service", NotificationManager.IMPORTANCE_LOW
+                    notificationChannel, service.getString(R.string.service_channel_name), NotificationManager.IMPORTANCE_LOW
                 )
             )
         }
         service.startForeground(
             notificationId, notificationBuilder
-                .setContentTitle(profileName.takeIf { it.isNotBlank() } ?: "Hiddify")
+                .setContentTitle(profileName.takeIf { it.isNotBlank() } ?: service.getString(R.string.app_name))
                 .setContentText(service.getString(contentTextId)).build()
         )
     }

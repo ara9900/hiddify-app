@@ -6,9 +6,9 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
+import 'package:hiddify/features/profile/data/profile_path_resolver.dart';
 import 'package:hiddify/features/profile/data/profile_repository.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
-import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'auth_service.dart';
@@ -76,10 +76,24 @@ class SyncService {
 
   Future<bool> _applyProfileContent(String content) async {
     final repo = await _ref.read(profileRepositoryProvider.future);
+    final pathResolver = _ref.read(profilePathResolverProvider);
     final userOverride = UserOverride(name: tikNetProfileDisplayName);
-    final wasConnected = _ref.read(connectionNotifierProvider).valueOrNull is Connected;
+    final connection = _ref.read(connectionNotifierProvider).valueOrNull;
+
+    // Never rewrite profile while VPN is up — avoids tun/core deadlock and phone-wide freeze.
+    if (connection is Connected || connection is Connecting || connection is Disconnecting) {
+      await _ref.read(connectionNotifierProvider.notifier).abortConnection();
+      await _ref.read(Preferences.startedByUser.notifier).update(false);
+    }
 
     var existing = await _findTikNetProfile(repo);
+
+    if (existing != null && _profileContentMatches(existing.id, content, pathResolver)) {
+      await _ref.read(Preferences.tikNetProfileId.notifier).update(existing.id);
+      await repo.setAsActive(existing.id).run();
+      return true;
+    }
+
     if (existing is RemoteProfileEntity) {
       await repo.deleteById(existing.id, existing.active).run();
       existing = null;
@@ -102,18 +116,25 @@ class SyncService {
 
     await _ref.read(Preferences.tikNetProfileId.notifier).update(profileId);
     await repo.setAsActive(profileId).run();
-
-    if (wasConnected && existing != null) {
-      await _ref.read(connectionNotifierProvider.notifier).reconnect(existing);
-    }
     return true;
+  }
+
+  bool _profileContentMatches(String profileId, String content, ProfilePathResolver pathResolver) {
+    final file = pathResolver.file(profileId);
+    if (!file.existsSync()) return false;
+    try {
+      final onDisk = file.readAsStringSync();
+      return onDisk.trim() == content.trim();
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<ProfileEntity?> _findTikNetProfile(ProfileRepository repo) async {
     final storedId = _ref.read(Preferences.tikNetProfileId);
     if (storedId.isNotEmpty) {
       final stored = await repo.getById(storedId).run();
-      if (stored case Right(value: final profile?) when profile != null) {
+      if (stored case Right(value: final profile)) {
         return profile;
       }
     }

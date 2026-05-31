@@ -191,12 +191,12 @@ flutter_gen:
     flutter_svg: true
 
 flutter_native_splash:
-  color: "#0f172a"
+  color: "#0b1a3a"
   image: assets/images/tiknet_splash.png
   android_gravity: fill
   fullscreen: true
   android_12:
-    color: "#0f172a"
+    color: "#0b1a3a"
     image: assets/images/tiknet_splash.png
 
 ffigen:

@@ -32,11 +32,11 @@ class HomePage extends HookConsumerWidget {
     final activeProfile = ref.watch(activeProfileProvider);
 
     final subscriptionExpired = () {
-      final info = ref.watch(tikNetUserInfoProvider).valueOrNull;
+      final info = ref.watch(tikNetUserInfoProvider);
       final exp = info?.expireDate;
       return exp != null && DateTime.now().isAfter(exp);
     }();
-    final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider).valueOrNull?.expireDate;
+    final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider)?.expireDate;
 
     return Scaffold(
       appBar: AppBar(

@@ -30,13 +30,8 @@ class TikNetAppFilterPage extends HookConsumerWidget {
     final searchController = useTextEditingController();
     final searchQuery = useState('');
 
-    final mode = PerAppProxyMode.include.toAppProxy();
-    useEffect(() {
-      if (ref.read(Preferences.perAppProxyMode) == PerAppProxyMode.off) {
-        ref.read(Preferences.perAppProxyMode.notifier).update(PerAppProxyMode.include);
-      }
-      return null;
-    }, []);
+    final mode = ref.watch(Preferences.perAppProxyMode).toAppProxy() ?? PerAppProxyMode.include.toAppProxy();
+    final perAppEnabled = ref.watch(Preferences.perAppProxyMode).enabled;
 
     final selectedApps = ref.watch(PerAppProxyProvider(mode));
 
@@ -70,6 +65,28 @@ class TikNetAppFilterPage extends HookConsumerWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Card(
+              color: TikNetColors.surfaceVariant,
+              child: SwitchListTile(
+                title: const Text('فیلتر اپ (Split Tunnel)'),
+                subtitle: Text(
+                  perAppEnabled
+                      ? 'فقط اپ‌های انتخاب‌شده از VPN استفاده می‌کنند.'
+                      : 'خاموش = همه اپ‌ها از VPN استفاده می‌کنند (پیشنهادی).',
+                  style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
+                ),
+                value: perAppEnabled,
+                activeColor: TikNetColors.primary,
+                onChanged: (on) async {
+                  await ref
+                      .read(Preferences.perAppProxyMode.notifier)
+                      .update(on ? PerAppProxyMode.include : PerAppProxyMode.off);
+                },
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
             child: TextField(

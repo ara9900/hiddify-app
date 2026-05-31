@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -28,11 +29,11 @@ class TikNetConnectionPage extends HookConsumerWidget {
     final requiresReconnect = ref.watch(configOptionNotifierProvider).valueOrNull ?? false;
 
     final subscriptionExpired = () {
-      final info = ref.watch(tikNetUserInfoProvider).valueOrNull;
+      final info = ref.watch(tikNetUserInfoProvider);
       final exp = info?.expireDate;
       return exp != null && DateTime.now().isAfter(exp);
     }();
-    final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider).valueOrNull?.expireDate;
+    final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider)?.expireDate;
 
     final statusLabel = switch (connectionStatus) {
       AsyncData(value: Connected()) when requiresReconnect => 'بروزرسانی اتصال',
@@ -132,7 +133,8 @@ class TikNetConnectionPage extends HookConsumerWidget {
                             ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile();
                             return;
                           }
-                          if (await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
+                          if (tikNetMode ||
+                              await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
                             await ref.read(connectionNotifierProvider.notifier).toggleConnection();
                           }
                         },

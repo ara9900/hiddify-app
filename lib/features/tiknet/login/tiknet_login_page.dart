@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
-import 'package:go_router/go_router.dart';
-import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/core/theme/tiknet_theme.dart';
+import 'package:hiddify/features/tiknet/login/tiknet_login_flow.dart';
+import 'package:hiddify/features/tiknet/login/tiknet_qr_login_parser.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/config_service.dart';
-import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class TikNetLoginPage extends HookConsumerWidget {
@@ -18,58 +19,71 @@ class TikNetLoginPage extends HookConsumerWidget {
     final passwordController = useTextEditingController();
     final isLoading = useState(false);
     final errorMsg = useState<String?>(null);
-    final panelUrl = useState<String?>(null);
-    final panelUrlLoading = useState(true);
+    final panelReady = useState(false);
+    final panelReachable = useState(true);
+
     useEffect(() {
       ref.read(configServiceProvider).getFirstWorkingPanelUrl().then((url) {
-        panelUrl.value = url;
-        panelUrlLoading.value = false;
+        panelReady.value = true;
+        panelReachable.value = url.isNotEmpty;
       }).catchError((_) {
-        panelUrlLoading.value = false;
-        panelUrl.value = null;
+        panelReady.value = true;
+        panelReachable.value = false;
       });
       return null;
     }, []);
 
-    Future<void> doLogin() async {
-      final username = usernameController.text.trim();
-      final password = passwordController.text;
-
-      if (username.isEmpty || password.isEmpty) {
-        errorMsg.value = 'نام کاربری و رمز عبور را وارد کنید.';
-        return;
-      }
-
+    Future<void> runLogin({required String username, required String password, String? panelBaseUrl}) async {
       errorMsg.value = null;
       isLoading.value = true;
       try {
-        final auth = ref.read(authServiceProvider);
-        await auth.login(username, password);
-
-        await ref.read(Preferences.introCompleted.notifier).update(true);
-
-        final sync = ref.read(syncServiceProvider);
-        try {
-          final synced = await sync.syncAllAndApplyProfile();
-          if (context.mounted && !synced) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('ورود موفق بود؛ دریافت کانفیگ از پنل ناموفق. از «حساب من» → بروزرسانی دوباره تلاش کنید.'),
-              ),
-            );
-          }
-        } on SyncTokenExpiredException {
-          if (context.mounted) context.go('/login');
-          return;
-        }
-
-        if (context.mounted) context.go('/home');
+        await performTikNetLogin(
+          ref: ref,
+          context: context,
+          username: username,
+          password: password,
+          panelBaseUrl: panelBaseUrl,
+        );
       } catch (e) {
-        errorMsg.value = e is AuthException ? e.message : e.toString().replaceFirst(RegExp(r'^Exception: '), '');
+        errorMsg.value = e is AuthException ? e.message : e.toString().replaceFirst(RegExp('^Exception: '), '');
       } finally {
         isLoading.value = false;
       }
     }
+
+    Future<void> doPasswordLogin() async {
+      final username = usernameController.text.trim();
+      final password = passwordController.text;
+      if (username.isEmpty || password.isEmpty) {
+        errorMsg.value = 'نام کاربری و رمز عبور را وارد کنید.';
+        return;
+      }
+      await runLogin(username: username, password: password);
+    }
+
+    Future<void> doQrLogin() async {
+      if (isLoading.value) return;
+      final raw = await ref.read(dialogNotifierProvider.notifier).showQrScanner();
+      if (raw == null || raw.trim().isEmpty || !context.mounted) return;
+
+      final payload = parseTikNetQrLogin(raw);
+      if (payload == null) {
+        errorMsg.value = 'QR نامعتبر است.';
+        return;
+      }
+
+      if (payload is TikNetQrSubscriptionLink) {
+        errorMsg.value =
+            'این QR لینک اشتراک است، نه ورود.\nQR ورود باید شامل نام کاربری و رمز باشد (مثلاً username:password یا JSON).';
+        return;
+      }
+
+      if (payload case TikNetQrCredentials(:final username, :final password, :final panelUrl)) {
+        await runLogin(username: username, password: password, panelBaseUrl: panelUrl);
+      }
+    }
+
+    final formEnabled = panelReady.value && panelReachable.value && !isLoading.value;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -83,51 +97,99 @@ class TikNetLoginPage extends HookConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('TikNet', style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-                  const Gap(8),
-                  Text('ورود با حساب پنل', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                  if (panelUrl.value != null && panelUrl.value!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text('پنل: ${panelUrl.value}', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  Center(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.asset(
+                        'assets/images/tiknet_splash.png',
+                        height: 120,
+                        width: 120,
+                        fit: BoxFit.cover,
+                      ),
                     ),
+                  ),
+                  const Gap(16),
+                  Text(
+                    'TikNet',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const Gap(8),
+                  Text(
+                    'ورود با حساب پنل',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
                   const Gap(32),
-                  if (panelUrlLoading.value)
+                  if (!panelReady.value)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Center(child: CircularProgressIndicator()),
                     )
-                  else if (panelUrl.value == null || panelUrl.value!.isEmpty)
+                  else if (!panelReachable.value)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text('اتصال به پنل برقرار نشد. اتصال اینترنت را بررسی کنید.', style: TextStyle(color: theme.colorScheme.error)),
+                      child: Text(
+                        'اتصال به پنل برقرار نشد. اتصال اینترنت را بررسی کنید.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: theme.colorScheme.error),
+                      ),
                     )
                   else ...[
-                  TextField(
-                    controller: usernameController,
-                    decoration: const InputDecoration(labelText: 'نام کاربری'),
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const Gap(16),
-                  TextField(
-                    controller: passwordController,
-                    decoration: const InputDecoration(labelText: 'رمز عبور'),
-                    obscureText: true,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => doLogin(),
-                  ),
-                  if (errorMsg.value != null) ...[
-                    const Gap(16),
-                    Text(errorMsg.value!, style: TextStyle(color: theme.colorScheme.error)),
-                  ],
-                  const Gap(24),
-                  FilledButton(
-                    onPressed: (isLoading.value || panelUrlLoading.value || panelUrl.value == null || panelUrl.value!.isEmpty) ? null : () => doLogin(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: isLoading.value ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('ورود'),
+                    TextField(
+                      controller: usernameController,
+                      decoration: const InputDecoration(labelText: 'نام کاربری'),
+                      textInputAction: TextInputAction.next,
+                      enabled: formEnabled,
                     ),
-                  ),
+                    const Gap(16),
+                    TextField(
+                      controller: passwordController,
+                      decoration: const InputDecoration(labelText: 'رمز عبور'),
+                      obscureText: true,
+                      textInputAction: TextInputAction.done,
+                      enabled: formEnabled,
+                      onSubmitted: (_) => doPasswordLogin(),
+                    ),
+                    if (errorMsg.value != null) ...[
+                      const Gap(16),
+                      Text(
+                        errorMsg.value!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: theme.colorScheme.error),
+                      ),
+                    ],
+                    const Gap(24),
+                    FilledButton(
+                      onPressed: formEnabled ? doPasswordLogin : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: isLoading.value
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Text('ورود'),
+                      ),
+                    ),
+                    const Gap(12),
+                    OutlinedButton.icon(
+                      onPressed: formEnabled ? doQrLogin : null,
+                      icon: const Icon(Icons.qr_code_scanner_rounded),
+                      label: const Text('ورود با QR'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: TikNetColors.primary,
+                        side: const BorderSide(color: TikNetColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                    const Gap(8),
+                    Text(
+                      'QR ورود: username:password یا JSON با username و password',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
+                    ),
                   ],
                 ],
               ),
