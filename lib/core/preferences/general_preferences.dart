@@ -139,6 +139,8 @@ abstract class Preferences {
   );
   /// TikNet: آخرین پیام اعلان (JSON با message.show, message.type, message.text)
   static final tikNetCachedAnnouncement = PreferencesNotifier.create<String, String>("tiknet_cached_announcement", "");
+  /// TikNet: selected server — "personal" or catalog server id
+  static final tikNetSelectedServer = PreferencesNotifier.create<String, String>("tiknet_selected_server", "personal");
 }
 
 @Riverpod(keepAlive: true)

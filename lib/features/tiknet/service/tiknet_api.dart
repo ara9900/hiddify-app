@@ -112,5 +112,39 @@ class TikNetApi {
     );
     return response.data ?? [];
   }
+
+  /// GET /api/customer/servers
+  Future<Map<String, dynamic>> getServerCatalog({required String baseUrl, required String accessToken}) async {
+    final dio = _dio(baseUrl);
+    final response = await dio.get<Map<String, dynamic>>(
+      '/api/customer/servers',
+      options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
+    if (response.data == null) throw TikNetApiException('Empty response');
+    return response.data!;
+  }
+
+  /// GET /api/customer/servers/{id}/config
+  Future<List<int>> getServerConfig({
+    required String baseUrl,
+    required String accessToken,
+    required int serverId,
+  }) async {
+    final dio = _dio(baseUrl);
+    try {
+      final response = await dio.get<List<int>>(
+        '/api/customer/servers/$serverId/config',
+        options: Options(
+          headers: {'Authorization': 'Bearer $accessToken'},
+          responseType: ResponseType.bytes,
+        ),
+      );
+      return response.data ?? [];
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
+      final msg = detail is String ? detail : (e.message ?? 'دریافت کانفیگ سرور ناموفق');
+      throw TikNetApiException(msg, statusCode: e.response?.statusCode);
+    }
+  }
 }
 

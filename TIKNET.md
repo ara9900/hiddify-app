@@ -35,6 +35,12 @@ After login the app:
 2. `GET /api/customer/subscription/config` — raw VPN config (Bearer token; panel proxies subscription URL)
 3. Imports config into a local Hiddify profile named **TikNet** and sets it active
 
+**Server catalog (admin-managed, app picker):**
+
+- Admin: `/admin/app-servers` — add subscription link or single config; tier (free/normal/vip), country code, VIP-only flag
+- App: `GET /api/customer/servers` — list; `GET /api/customer/servers/{id}/config` — raw config
+- User selects server on connection tab; default **اشتراک من** uses personal subscription config
+
 The **بروزرسانی** button on «حساب من» runs the same sync + profile apply.
 
 Panel files (separate repo `project vpn with cursor`):

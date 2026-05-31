@@ -9,6 +9,7 @@ import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_path_resolver.dart';
 import 'package:hiddify/features/profile/data/profile_repository.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'auth_service.dart';
@@ -50,7 +51,7 @@ class SyncService {
       final profileJson = _profileToJson(profile);
       await _ref.read(Preferences.tikNetCachedProfile.notifier).update(jsonEncode(profileJson));
 
-      final configBytes = await api.getSubscriptionConfig(baseUrl: baseUrl, accessToken: token);
+      final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
       if (configBytes.isEmpty) return false;
       await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
 
@@ -62,9 +63,57 @@ class SyncService {
         throw SyncTokenExpiredException();
       }
       return false;
+    } on TikNetApiException {
+      return false;
     } catch (_) {
       return false;
     }
+  }
+
+  /// Fetch and apply config for current server selection (personal or catalog).
+  Future<bool> applySelectedServerConfig() async {
+    final auth = _ref.read(authServiceProvider);
+    if (!auth.isLoggedIn()) return false;
+    final baseUrl = _ref.read(Preferences.tikNetPanelBaseUrl);
+    final token = auth.getToken();
+    if (baseUrl.isEmpty || token.isEmpty) return false;
+
+    final api = _ref.read(tikNetApiProvider);
+    try {
+      final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
+      if (configBytes.isEmpty) return false;
+      await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
+      await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
+      return applyProfileFromCache();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        await auth.logout();
+        throw SyncTokenExpiredException();
+      }
+      return false;
+    } on TikNetApiException {
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<int>> _fetchConfigBytes(TikNetApi api, {required String baseUrl, required String token}) async {
+    final selection = parseServerSelection(_ref.read(Preferences.tikNetSelectedServer));
+    if (selection.isPersonal || selection.catalogId == null) {
+      return api.getSubscriptionConfig(baseUrl: baseUrl, accessToken: token);
+    }
+    return api.getServerConfig(
+      baseUrl: baseUrl,
+      accessToken: token,
+      serverId: selection.catalogId!,
+    );
+  }
+
+  TikNetServerSelection get selectedServer => parseServerSelection(_ref.read(Preferences.tikNetSelectedServer));
+
+  Future<void> setSelectedServer(TikNetServerSelection selection) async {
+    await _ref.read(Preferences.tikNetSelectedServer.notifier).update(encodeServerSelection(selection));
   }
 
   /// Applies cached panel config to local Hiddify profile [tikNetProfileDisplayName].

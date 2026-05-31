@@ -9,6 +9,7 @@ import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
 import 'package:hiddify/features/stats/notifier/stats_notifier.dart';
+import 'package:hiddify/features/tiknet/connection/tiknet_server_picker.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
@@ -119,6 +120,8 @@ class TikNetConnectionPage extends HookConsumerWidget {
                       ),
                     ),
                   ),
+                  const Gap(16),
+                  const TikNetServerSelectorCard(),
                   const Gap(32),
                   Center(
                     child: AbsorbPointer(
