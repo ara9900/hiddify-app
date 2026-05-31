@@ -22,7 +22,7 @@ void main() {
     test('getPanelUrls returns URLs from GitHub Pages when it responds', () async {
       final configJson = jsonEncode({'api_urls': ['https://panel.from-github.test', 'https://backup.test']});
       final adapter = _MockAdapter(
-        onConfig: () => configJson,
+        onConfig: (_) => configJson,
         onHealth: () => 'ok',
       );
       final service = ConfigService(prefs, httpClientAdapter: adapter);
@@ -33,10 +33,28 @@ void main() {
       expect(prefs.getString(cacheKeyPanelUrls), configJson);
     });
 
-    test('getPanelUrls returns cached URLs when GitHub Pages does not respond', () async {
+    test('getPanelUrls falls back to panel config when GitHub fails', () async {
+      final panelJson = jsonEncode({'api_urls': ['https://panel.tikn.ir']});
+      final adapter = _MockAdapter(
+        onConfig: (url) {
+          if (url == configJsonUrl) throw Exception('github blocked');
+          if (url == panelConfigJsonUrl) return panelJson;
+          throw Exception('unknown config url');
+        },
+        onHealth: () => 'ok',
+      );
+      final service = ConfigService(prefs, httpClientAdapter: adapter);
+
+      final urls = await service.getPanelUrls();
+
+      expect(urls, ['https://panel.tikn.ir']);
+      expect(prefs.getString(cacheKeyPanelUrls), panelJson);
+    });
+
+    test('getPanelUrls returns cached URLs when all remote config fails', () async {
       final cachedUrls = ['https://cached.panel.test'];
       await prefs.setString(cacheKeyPanelUrls, jsonEncode(cachedUrls));
-      final adapter = _MockAdapter(onConfig: () => throw Exception('network error'));
+      final adapter = _MockAdapter(onConfig: (_) => throw Exception('network error'));
       final service = ConfigService(prefs, httpClientAdapter: adapter);
 
       final urls = await service.getPanelUrls();
@@ -44,21 +62,21 @@ void main() {
       expect(urls, cachedUrls);
     });
 
-    test('getPanelUrls returns hardcoded URLs when GitHub and cache both fail', () async {
-      final adapter = _MockAdapter(onConfig: () => throw Exception('network error'));
+    test('getPanelUrls returns hardcoded URLs when remote and cache both fail', () async {
+      final adapter = _MockAdapter(onConfig: (_) => throw Exception('network error'));
       final service = ConfigService(prefs, httpClientAdapter: adapter);
 
       final urls = await service.getPanelUrls();
 
       expect(urls, hardcodedPanelUrls);
       expect(urls.isNotEmpty, true);
-      expect(urls.first, 'https://login.tikn.ir');
+      expect(urls.first, 'https://panel.tikn.ir');
     });
 
     test('getFirstWorkingPanelUrl returns first URL when GitHub responds and health succeeds', () async {
       final configJson = jsonEncode({'api_urls': ['https://first.test', 'https://second.test']});
       final adapter = _MockAdapter(
-        onConfig: () => configJson,
+        onConfig: (_) => configJson,
         onHealth: () => 'ok',
       );
       final service = ConfigService(prefs, httpClientAdapter: adapter);
@@ -71,7 +89,7 @@ void main() {
     test('getFirstWorkingPanelUrl falls back to first in list when no health responds (cache then hardcoded)', () async {
       await prefs.setString(cacheKeyPanelUrls, jsonEncode(['https://cached.only.test']));
       final adapter = _MockAdapter(
-        onConfig: () => throw Exception('offline'),
+        onConfig: (_) => throw Exception('offline'),
         onHealth: () => throw Exception('unreachable'),
       );
       final service = ConfigService(prefs, httpClientAdapter: adapter);
@@ -83,15 +101,15 @@ void main() {
   });
 }
 
-/// Mock [HttpClientAdapter] that returns config JSON for config URL and body for health URL.
+/// Mock [HttpClientAdapter] that returns config JSON for config URLs and body for health URL.
 class _MockAdapter extends HttpClientAdapter {
   _MockAdapter({
-    String? Function()? onConfig,
+    String? Function(String url)? onConfig,
     String? Function()? onHealth,
   })  : _onConfig = onConfig,
         _onHealth = onHealth;
 
-  final String? Function()? _onConfig;
+  final String? Function(String url)? _onConfig;
   final String? Function()? _onHealth;
 
   @override
@@ -101,8 +119,8 @@ class _MockAdapter extends HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     final uri = options.uri.toString();
-    if (uri == configJsonUrl) {
-      final body = _onConfig?.call();
+    if (configJsonUrls.contains(uri)) {
+      final body = _onConfig?.call(uri);
       if (body != null) {
         return ResponseBody.fromString(body, 200, headers: {'content-type': 'application/json'});
       }

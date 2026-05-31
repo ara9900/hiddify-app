@@ -5,14 +5,22 @@ import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// GitHub Pages config (may be filtered in some regions).
 const String configJsonUrl = 'https://ara9900.github.io/app-config/config.json';
+
+/// Fallback config on panel domain (same JSON: { "api_urls": [...] }).
+const String panelConfigJsonUrl = 'https://panel.tikn.ir/config.json';
+
+/// Ordered config sources: GitHub → panel domain → cache → hardcoded.
+const List<String> configJsonUrls = [configJsonUrl, panelConfigJsonUrl];
+
 const String cacheKeyPanelUrls = 'tiknet_config_panel_urls';
 const Duration fetchTimeout = Duration(seconds: 8);
 const Duration healthCheckTimeout = Duration(seconds: 5);
 
-/// Hardcoded fallback when config fetch and cache both fail.
+/// Hardcoded fallback when all remote config fetches and cache fail.
 const List<String> hardcodedPanelUrls = [
-  'https://login.tikn.ir',
+  'https://panel.tikn.ir',
 ];
 
 final configServiceProvider = Provider<ConfigService>((ref) {
@@ -54,30 +62,40 @@ class ConfigService {
     _prefs.setString(cacheKeyPanelUrls, jsonEncode(urls));
   }
 
-  /// Fetches config from [configJsonUrl], caches [api_urls]. On failure uses cache then [hardcodedPanelUrls].
-  Future<List<String>> getPanelUrls() async {
+  Dio _configDio() {
+    final dio = Dio(BaseOptions(
+      connectTimeout: fetchTimeout,
+      sendTimeout: fetchTimeout,
+      receiveTimeout: fetchTimeout,
+    ));
+    if (_httpClientAdapter != null) dio.httpClientAdapter = _httpClientAdapter!;
+    return dio;
+  }
+
+  Future<List<String>?> _fetchUrlsFrom(String url) async {
     try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: fetchTimeout,
-        sendTimeout: fetchTimeout,
-        receiveTimeout: fetchTimeout,
-      ));
-      if (_httpClientAdapter != null) dio.httpClientAdapter = _httpClientAdapter!;
-      final res = await dio.get<Map<String, dynamic>>(configJsonUrl);
+      final res = await _configDio().get<Map<String, dynamic>>(url);
       final urls = _parseUrls(res.data);
-      if (urls.isNotEmpty) {
+      if (urls.isNotEmpty) return urls;
+    } catch (_) {}
+    return null;
+  }
+
+  /// Fetches [api_urls]: GitHub → panel.tikn.ir/config.json → cache → [hardcodedPanelUrls].
+  Future<List<String>> getPanelUrls() async {
+    for (final url in configJsonUrls) {
+      final urls = await _fetchUrlsFrom(url);
+      if (urls != null) {
         _saveToCache(urls);
         return urls;
       }
-    } catch (_) {
-      // Intentional: fall back to cache then hardcoded URLs (no crash on network/config errors).
     }
     final cached = _getCachedUrls();
     if (cached.isNotEmpty) return cached;
     return List.from(hardcodedPanelUrls);
   }
 
-  /// Returns the first URL that responds (e.g. GET /api/health). Tries in order: fetched list, cache, hardcoded.
+  /// Returns the first URL that responds (GET /api/health). Falls back to first in list.
   Future<String> getFirstWorkingPanelUrl() async {
     final urls = await getPanelUrls();
     if (urls.isEmpty) return hardcodedPanelUrls.first;

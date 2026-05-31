@@ -10,11 +10,24 @@ This app is customized for **TikNet**: login with panel account, 3 tabs only (Co
 
 **امضای ثابت (نصب روی نسخهٔ قبلی):** keystore داخل ریپو نیست؛ از **GitHub Secrets** استفاده می‌شود. یک بار keystore را بساز، به base64 تبدیل کن و در ریپو اضافه کن (پایین همین فایل).
 
-## Panel API
+## Panel API & config
 
-- Set **Panel URL** on the login screen (e.g. `https://your-panel.com`).
-- Login: `POST /api/customer/login` with `username` and `password`.
-- After login, the app receives `subscription_url` and loads config automatically.
+Panel base URL is resolved automatically (no manual entry on login):
+
+1. `GET https://ara9900.github.io/app-config/config.json` → `api_urls`
+2. If GitHub is blocked: `GET https://panel.tikn.ir/config.json` → same JSON shape
+3. Else cached `api_urls` on device
+4. Else hardcoded: `https://panel.tikn.ir`
+
+Host the same JSON on the panel server at **`/config.json`**:
+
+```json
+{
+  "api_urls": ["https://panel.tikn.ir"]
+}
+```
+
+Then health check + login: `GET /api/health`, `POST /api/customer/login`.
 
 ## Disable TikNet mode
 
