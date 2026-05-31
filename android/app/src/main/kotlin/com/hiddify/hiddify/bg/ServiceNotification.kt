@@ -187,7 +187,7 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
                 var previous = coreClient.GetSystemInfo().executeBlocking(Empty())
 
                 while (isActive) {
-                    delay(1_000) // ✅ coroutine-friendly
+                    delay(3_000) // throttle notification updates to reduce notification-shade jank (esp. Samsung One UI)
                     val current = coreClient.GetSystemInfo().executeBlocking(Empty())
                     updateStatus(previous,current)
                     previous = current

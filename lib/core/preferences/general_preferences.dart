@@ -96,7 +96,7 @@ abstract class Preferences {
 
   static final markNewProfileActive = PreferencesNotifier.create<bool, bool>("mark_new_profile_active", true);
 
-  static final dynamicNotification = PreferencesNotifier.create<bool, bool>("dynamic_notification", true);
+  static final dynamicNotification = PreferencesNotifier.create<bool, bool>("dynamic_notification", false);
 
   static final autoCheckIp = PreferencesNotifier.create<bool, bool>("auto_check_ip", true);
 
