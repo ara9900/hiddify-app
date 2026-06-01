@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/localization/locale_preferences.dart';
+import 'package:hiddify/core/hiddify_remote_block.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/environment.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
@@ -20,7 +21,11 @@ part 'app_update_notifier.g.dart';
 const _debugUpgrader = true;
 
 @riverpod
-Upgrader upgrader(Ref ref) => Upgrader(
+Upgrader upgrader(Ref ref) {
+  if (blockHiddifyRemoteServices) {
+    return Upgrader(debugLogging: false);
+  }
+  return Upgrader(
   storeController: UpgraderStoreController(
     onAndroid: () => ref.read(appInfoProvider).requireValue.release.allowCustomUpdateChecker
         ? UpgraderAppcastStore(appcastURL: Constants.appCastUrl)
@@ -34,12 +39,15 @@ Upgrader upgrader(Ref ref) => Upgrader(
   debugLogging: false && _debugUpgrader && kDebugMode,
   // durationUntilAlertAgain: const Duration(hours: 12),
   messages: UpgraderMessages(code: ref.watch(localePreferencesProvider).languageCode),
-);
+  );
+}
+
 
 @Riverpod(keepAlive: true)
 class AppUpdateNotifier extends _$AppUpdateNotifier with AppLogger {
   @override
-  AppUpdateState build() => const AppUpdateState.initial();
+  AppUpdateState build() =>
+      blockHiddifyRemoteServices ? const AppUpdateState.disabled() : const AppUpdateState.initial();
 
   PreferencesEntry<String?, dynamic> get _ignoreReleasePref => PreferencesEntry(
     preferences: ref.read(sharedPreferencesProvider).requireValue,
@@ -48,6 +56,9 @@ class AppUpdateNotifier extends _$AppUpdateNotifier with AppLogger {
   );
 
   Future<AppUpdateState> check() async {
+    if (blockHiddifyRemoteServices) {
+      return state = const AppUpdateState.disabled();
+    }
     loggy.debug("checking for update");
     state = const AppUpdateState.checking();
     final appInfo = ref.watch(appInfoProvider).requireValue;

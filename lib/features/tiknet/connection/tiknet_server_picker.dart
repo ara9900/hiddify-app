@@ -96,16 +96,23 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                           ),
                         ),
                         ...groups[tier]!.map(
-                          (s) => _ServerTile(
-                            title: s.name,
-                            subtitle: [s.countryLabel, s.tierLabel].where((e) => e.isNotEmpty).join(' · '),
-                            selected: !selected.isPersonal && selected.catalogId == s.id,
-                            enabled: s.accessible,
-                            locked: !s.accessible,
-                            onTap: s.accessible
-                                ? () => _select(context, ref, sync, (isPersonal: false, catalogId: s.id))
-                                : null,
-                          ),
+                          (s) {
+                            final health = s.healthLabel;
+                            final subParts = [s.countryLabel, s.tierLabel, if (health.isNotEmpty) health]
+                                .where((e) => e.isNotEmpty)
+                                .join(' · ');
+                            return _ServerTile(
+                              title: s.name,
+                              subtitle: subParts,
+                              selected: !selected.isPersonal && selected.catalogId == s.id,
+                              enabled: s.accessible,
+                              locked: !s.accessible,
+                              healthDown: s.healthStatus == 'down',
+                              onTap: s.accessible
+                                  ? () => _select(context, ref, sync, (isPersonal: false, catalogId: s.id))
+                                  : null,
+                            );
+                          },
                         ),
                       ],
                     if (!catalog.personalAvailable && catalog.servers.isEmpty)
@@ -156,6 +163,7 @@ class _ServerTile extends StatelessWidget {
     required this.selected,
     required this.enabled,
     this.locked = false,
+    this.healthDown = false,
     this.onTap,
   });
 
@@ -164,6 +172,7 @@ class _ServerTile extends StatelessWidget {
   final bool selected;
   final bool enabled;
   final bool locked;
+  final bool healthDown;
   final VoidCallback? onTap;
 
   @override
@@ -174,8 +183,10 @@ class _ServerTile extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       tileColor: selected ? TikNetColors.primary.withValues(alpha: 0.15) : null,
       leading: Icon(
-        locked ? Icons.lock_outline_rounded : Icons.public_rounded,
-        color: selected ? TikNetColors.primary : TikNetColors.onSurfaceVariant,
+        locked ? Icons.lock_outline_rounded : (healthDown ? Icons.cloud_off_rounded : Icons.public_rounded),
+        color: healthDown
+            ? TikNetColors.error
+            : (selected ? TikNetColors.primary : TikNetColors.onSurfaceVariant),
       ),
       title: Text(title, style: TextStyle(fontWeight: selected ? FontWeight.bold : FontWeight.w500)),
       subtitle: Text(subtitle, style: const TextStyle(color: TikNetColors.onSurfaceVariant, fontSize: 12)),
@@ -205,7 +216,8 @@ class TikNetServerSelectorCard extends ConsumerWidget {
       }
       if (match != null) {
         label = match.name;
-        sub = [match.countryLabel, match.tierLabel].where((e) => e.isNotEmpty).join(' · ');
+        final parts = [match.countryLabel, match.tierLabel, if (match.healthLabel.isNotEmpty) match.healthLabel];
+        sub = parts.where((e) => e.isNotEmpty).join(' · ');
       } else {
         label = 'سرور #${selected.catalogId}';
         sub = 'کاتالوگ';

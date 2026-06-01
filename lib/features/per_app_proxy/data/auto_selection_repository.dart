@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:hiddify/core/hiddify_remote_block.dart';
 import 'package:hiddify/core/http_client/dio_http_client.dart';
 import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/model/region.dart';
@@ -42,6 +43,9 @@ class AutoSelectionRepositoryImpl with AppLogger implements AutoSelectionReposit
       await _makeRequest(mode: AppProxyMode.include, region: region ?? _getRegion());
 
   Future<(Set<String>?, AutoSelectionResult)> _makeRequest({required AppProxyMode mode, Region? region}) async {
+    if (blockHiddifyRemoteServices) {
+      return (null, AutoSelectionResult.failure);
+    }
     try {
       final rs = await _getHttp().get(_genUrl(mode, region ?? _getRegion()));
       if (rs.statusCode == 200) {

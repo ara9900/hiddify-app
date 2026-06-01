@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:dio_smart_retry/dio_smart_retry.dart';
-
+import 'package:hiddify/core/hiddify_remote_block.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
 
 class DioHttpClient with InfraLogger {
@@ -19,6 +19,26 @@ class DioHttpClient with InfraLogger {
           headers: {"User-Agent": userAgent},
         ),
       );
+      if (blockHiddifyRemoteServices) {
+        _dio[mode]!.interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              if (isBlockedHiddifyRemoteUrl(options.uri.toString())) {
+                handler.reject(
+                  DioException(
+                    requestOptions: options,
+                    type: DioExceptionType.cancel,
+                    message: 'Hiddify remote blocked',
+                  ),
+                );
+                return;
+              }
+              handler.next(options);
+            },
+          ),
+        );
+      }
+
       _dio[mode]!.interceptors.add(
         RetryInterceptor(
           dio: _dio[mode]!,

@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
+import 'package:hiddify/features/tiknet/update/tiknet_app_update_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Shared post-auth steps: sync config from panel, then navigate home.
@@ -28,6 +32,7 @@ Future<void> completeTikNetLoginFlow(WidgetRef ref, BuildContext context) async 
   }
 
   if (context.mounted) context.go('/home');
+  await ref.read(tikNetTelemetryServiceProvider).sendAppOpenOnce();
 }
 
 Future<void> performTikNetLogin({
@@ -39,5 +44,8 @@ Future<void> performTikNetLogin({
 }) async {
   final auth = ref.read(authServiceProvider);
   await auth.login(username, password, panelBaseUrl: panelBaseUrl);
+  if (Platform.isAndroid) {
+    await ref.read(tikNetAppUpdateNotifierProvider.notifier).checkForUpdate(forceRefresh: true);
+  }
   if (context.mounted) await completeTikNetLoginFlow(ref, context);
 }

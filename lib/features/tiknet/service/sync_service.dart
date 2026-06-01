@@ -205,6 +205,19 @@ class SyncService {
       'full_name': p.fullName,
       'expire_date': p.expireDate?.toIso8601String(),
       'has_subscription': p.hasSubscription,
+      if (p.planName != null) 'plan_name': p.planName,
+      if (p.isExpired != null) 'is_expired': p.isExpired,
+      if (p.daysRemaining != null) 'days_remaining': p.daysRemaining,
+      if (p.trafficUsedBytes != null) 'traffic_used_bytes': p.trafficUsedBytes,
+      if (p.trafficLimitBytes != null) 'traffic_limit_bytes': p.trafficLimitBytes,
+      if (p.brand != null && !p.brand!.isEmpty)
+        'brand': {
+          'name': p.brand!.name,
+          'logo_url': p.brand!.logoUrl,
+          'primary_color': p.brand!.primaryColor,
+          'support_telegram': p.brand!.supportTelegram,
+          'api_base_url': p.brand!.apiBaseUrl,
+        },
     };
   }
 

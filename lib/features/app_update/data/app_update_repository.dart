@@ -1,5 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/http_client/dio_http_client.dart';
+import 'package:hiddify/core/hiddify_remote_block.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/environment.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
@@ -26,6 +27,9 @@ class AppUpdateRepositoryImpl with ExceptionHandler, InfraLogger implements AppU
     Release release = Release.general,
   }) {
     return exceptionHandler(() async {
+      if (blockHiddifyRemoteServices) {
+        throw Exception("Hiddify update check disabled");
+      }
       if (!release.allowCustomUpdateChecker) {
         throw Exception("custom update checkers are not supported");
       }

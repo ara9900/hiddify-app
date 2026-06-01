@@ -14,6 +14,7 @@ import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/core/model/tiknet_config.dart';
+import 'package:hiddify/features/tiknet/update/tiknet_app_update_overlay.dart';
 import 'package:hiddify/core/theme/app_theme.dart';
 import 'package:hiddify/core/theme/theme_preferences.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
@@ -62,10 +63,11 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
     final locale = ref.watch(localePreferencesProvider);
     final themeMode = ref.watch(themePreferencesProvider);
     final theme = AppTheme(themeMode, locale.preferredFontFamily);
-    final upgrader = ref.watch(upgraderProvider);
     final activeBreakpoint = Breakpoint(context).activeBreakpoint;
 
-    ref.listen(foregroundProfilesUpdateNotifierProvider, (_, _) {});
+    if (!tikNetMode) {
+      ref.listen(foregroundProfilesUpdateNotifierProvider, (_, _) {});
+    }
     if (PlatformUtils.isAndroid) ref.listen(perAppProxyServiceProvider, (_, _) {});
     if (PlatformUtils.isDesktop) ref.listen(systemTrayNotifierProvider, (_, _) {});
 
@@ -96,9 +98,15 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
                     final theme = Theme.of(context);
                     final routedChild = child ?? const SizedBox();
                     final wrappedChild = tikNetMode
-                        ? routedChild
+                        ? Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              routedChild,
+                              const TikNetAppUpdateOverlay(),
+                            ],
+                          )
                         : UpgradeAlert(
-                            upgrader: upgrader,
+                            upgrader: ref.watch(upgraderProvider),
                             navigatorKey: router.routerDelegate.navigatorKey,
                             child: routedChild,
                           );

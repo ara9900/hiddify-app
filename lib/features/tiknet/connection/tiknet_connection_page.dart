@@ -9,6 +9,7 @@ import 'package:hiddify/features/tiknet/connection/tiknet_connection_stats_provi
 import 'package:hiddify/features/tiknet/connection/tiknet_server_picker.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hiddify/utils/number_formatters.dart';
@@ -49,6 +50,15 @@ class TikNetConnectionPage extends HookConsumerWidget {
       AsyncData(value: Connected()) || AsyncData(value: Disconnected()) || AsyncError() => true,
       _ => false,
     };
+
+    ref.listen(connectionNotifierProvider, (prev, next) {
+      final wasConnected = prev?.valueOrNull is Connected;
+      if (next case AsyncData(value: Connected()) when !wasConnected) {
+        ref.read(tikNetTelemetryServiceProvider).send('connect_success');
+      } else if (next case AsyncError() when prev is! AsyncError) {
+        ref.read(tikNetTelemetryServiceProvider).send('connect_fail');
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(

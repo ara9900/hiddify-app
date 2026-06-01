@@ -10,6 +10,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
+import androidx.core.content.FileProvider
+import java.io.File
 import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
@@ -43,6 +45,7 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
             RequestIgnoreBatteryOptimizations("request_ignore_battery_optimizations"),
             GetInstalledPackages("get_installed_packages"),
             GetPackagesIcon("get_package_icon"),
+            InstallApk("install_apk"),
         }
     }
 
@@ -181,6 +184,37 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
                         Base64.encodeToString(byteArrayOutputStream.toByteArray(), Base64.NO_WRAP)
                     success(base64)
                 }
+            }
+
+            Trigger.InstallApk.method -> {
+                val act = activity
+                if (act == null) {
+                    result.error("no_activity", "Activity not available", null)
+                    return
+                }
+                val args = call.arguments as? Map<*, *>
+                val path = args?.get("path") as? String
+                if (path.isNullOrBlank()) {
+                    result.error("invalid_path", "APK path missing", null)
+                    return
+                }
+                val apk = File(path)
+                if (!apk.exists()) {
+                    result.error("not_found", "APK file not found", null)
+                    return
+                }
+                val uri = FileProvider.getUriForFile(
+                    act,
+                    "${act.packageName}.fileProvider",
+                    apk,
+                )
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                act.startActivity(intent)
+                result.success(true)
             }
 
             else -> result.notImplemented()

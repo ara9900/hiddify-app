@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:hiddify/core/hiddify_remote_block.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
@@ -28,13 +29,15 @@ class PerAppProxyService extends _$PerAppProxyService {
         .watchActivePackages(phonePkgs: phonePkgs, mode: AppProxyMode.exclude)
         .listen((pkgs) => ref.read(Preferences.excludeApps.notifier).update(pkgs));
 
-    _timer = Timer.periodic(const Duration(days: 1), (_) async => await _autoSelectionUpdate());
+    if (!blockHiddifyRemoteServices) {
+      _timer = Timer.periodic(const Duration(days: 1), (_) async => await _autoSelectionUpdate());
+      await _autoSelectionUpdate();
+    }
     ref.onDispose(() {
       _includeSubscription?.cancel();
       _excludeSubscription?.cancel();
       _timer?.cancel();
     });
-    await _autoSelectionUpdate();
   }
 
   Future<void> _autoSelectionUpdate() async {

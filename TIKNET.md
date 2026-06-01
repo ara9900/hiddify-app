@@ -49,6 +49,16 @@ Panel files (separate repo `project vpn with cursor`):
 - `app/static/config.json` — public `api_urls` for app bootstrap
 - `app/services/order_service.py` — `subscription_url` on active order
 
+## In-app update (Android, panel-controlled)
+
+- **API:** `GET /api/customer/app-update` (no token)
+- **Admin:** Settings → «آپدیت درون‌برنامه‌ای اپ TikNet»
+  - Enable, `versionCode` (must be **greater** than installed `buildNumber`, e.g. `40103` for `4.1.3+40103`)
+  - Direct **HTTPS** APK URL (e.g. `https://panel.tikn.ir/static/releases/TikNet.apk`)
+  - **Force** = user cannot dismiss; optional = «بعداً» skips until next version
+  - Optional SHA256 (hex) for download integrity
+- App downloads APK and opens Android install UI. Hiddify GitHub update checks stay disabled.
+
 ## Disable TikNet mode
 
 To restore the original Hiddify UI (all tabs, no login), set in `lib/core/model/tiknet_config.dart`:

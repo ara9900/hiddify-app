@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'config_service.dart';
@@ -143,6 +144,11 @@ class AuthService {
 
   /// Clears panel URL, token, expires_at, subscription_url, and sync cache.
   Future<void> logout() async {
+    final baseUrl = _ref.read(Preferences.tikNetPanelBaseUrl);
+    final token = _ref.read(Preferences.tikNetAccessToken);
+    if (baseUrl.isNotEmpty && token.isNotEmpty) {
+      await _ref.read(tikNetApiProvider).logoutRemote(baseUrl: baseUrl, accessToken: token);
+    }
     await _ref.read(Preferences.tikNetPanelBaseUrl.notifier).update('');
     await _ref.read(Preferences.tikNetAccessToken.notifier).update('');
     await _ref.read(Preferences.tikNetTokenExpiresAt.notifier).update(null);

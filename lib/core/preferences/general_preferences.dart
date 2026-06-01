@@ -114,6 +114,13 @@ abstract class Preferences {
   /// TikNet: last username for login form prefill (not password)
   static final tikNetSavedUsername = PreferencesNotifier.create<String, String>("tiknet_saved_username", "");
 
+  /// TikNet: optional update dismissed for this versionCode
+  static final tikNetIgnoredUpdateVersionCode =
+      PreferencesNotifier.create<String, String>("tiknet_ignored_update_version_code", "");
+
+  /// TikNet: app-update channel from panel (stable | beta)
+  static final tikNetUpdateChannel = PreferencesNotifier.create<String, String>("tiknet_update_channel", "stable");
+
   /// TikNet: panel API base URL (e.g. https://panel.example.com)
   static final tikNetPanelBaseUrl = PreferencesNotifier.create<String, String>("tiknet_panel_base_url", "");
   /// TikNet: JWT access token after login

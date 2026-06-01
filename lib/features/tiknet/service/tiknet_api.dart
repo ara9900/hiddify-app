@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_brand.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_faq.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Thrown when panel returns 4xx/5xx with optional [detail] from response body.
@@ -37,21 +39,75 @@ class TikNetUserInfo {
     this.fullName,
     this.expireDate,
     required this.hasSubscription,
+    this.planName,
+    this.isExpired,
+    this.daysRemaining,
+    this.trafficUsedBytes,
+    this.trafficLimitBytes,
+    this.brand,
   });
   final String username;
   final String? fullName;
   final DateTime? expireDate;
   final bool hasSubscription;
+  final String? planName;
+  final bool? isExpired;
+  final int? daysRemaining;
+  final int? trafficUsedBytes;
+  final int? trafficLimitBytes;
+  final TikNetBrand? brand;
 
   factory TikNetUserInfo.fromJson(Map<String, dynamic> json) {
-    String? expireStr = json['expire_date'] as String?;
+    final expireStr = json['expire_date'] as String?;
+    final brandRaw = json['brand'];
     return TikNetUserInfo(
       username: json['username'] as String? ?? '',
       fullName: json['full_name'] as String?,
       expireDate: expireStr != null ? DateTime.tryParse(expireStr) : null,
       hasSubscription: json['has_subscription'] as bool? ?? false,
+      planName: json['plan_name'] as String?,
+      isExpired: json['is_expired'] as bool?,
+      daysRemaining: (json['days_remaining'] as num?)?.toInt(),
+      trafficUsedBytes: (json['traffic_used_bytes'] as num?)?.toInt(),
+      trafficLimitBytes: (json['traffic_limit_bytes'] as num?)?.toInt(),
+      brand: brandRaw is Map ? TikNetBrand.fromJson(Map<String, dynamic>.from(brandRaw)) : null,
     );
   }
+}
+
+class TikNetCustomerOrder {
+  TikNetCustomerOrder({
+    required this.id,
+    required this.planName,
+    required this.status,
+    this.expireDate,
+    this.trafficUsedBytes,
+    this.trafficLimitBytes,
+    this.renewUrl,
+  });
+
+  final int id;
+  final String planName;
+  final String status;
+  final DateTime? expireDate;
+  final int? trafficUsedBytes;
+  final int? trafficLimitBytes;
+  final String? renewUrl;
+
+  factory TikNetCustomerOrder.fromJson(Map<String, dynamic> json) {
+    final expireStr = json['expire_date'] as String?;
+    return TikNetCustomerOrder(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      planName: (json['plan_name'] as String?) ?? '',
+      status: (json['status'] as String?) ?? '',
+      expireDate: expireStr != null ? DateTime.tryParse(expireStr) : null,
+      trafficUsedBytes: (json['traffic_used_bytes'] as num?)?.toInt(),
+      trafficLimitBytes: (json['traffic_limit_bytes'] as num?)?.toInt(),
+      renewUrl: (json['renew_url'] as String?)?.trim(),
+    );
+  }
+
+  bool get isActive => status.toLowerCase() == 'active';
 }
 
 final tikNetApiProvider = Provider<TikNetApi>((ref) => TikNetApi());
@@ -98,6 +154,46 @@ class TikNetApi {
     );
     if (response.data == null) throw Exception('Empty response');
     return TikNetUserInfo.fromJson(response.data!);
+  }
+
+  /// POST /api/customer/logout — best effort; ignores errors.
+  Future<void> logoutRemote({required String baseUrl, required String accessToken}) async {
+    try {
+      final dio = _dio(baseUrl);
+      await dio.post<void>(
+        '/api/customer/logout',
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+    } catch (_) {}
+  }
+
+  /// GET /api/customer/faq
+  Future<List<TikNetFaqItem>> getFaq({required String baseUrl}) async {
+    final dio = _dio(baseUrl);
+    final response = await dio.get<Map<String, dynamic>>('/api/customer/faq');
+    final items = response.data?['items'];
+    if (items is! List) return const [];
+    return items
+        .whereType<Map>()
+        .map((e) => TikNetFaqItem.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.id > 0 && e.question.isNotEmpty)
+        .toList();
+  }
+
+  /// GET /api/customer/orders
+  Future<List<TikNetCustomerOrder>> getOrders({required String baseUrl, required String accessToken}) async {
+    final dio = _dio(baseUrl);
+    final response = await dio.get<Map<String, dynamic>>(
+      '/api/customer/orders',
+      options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
+    final orders = response.data?['orders'];
+    if (orders is! List) return const [];
+    return orders
+        .whereType<Map>()
+        .map((e) => TikNetCustomerOrder.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.id > 0)
+        .toList();
   }
 
   /// GET /api/customer/subscription/config - returns raw bytes
@@ -147,4 +243,3 @@ class TikNetApi {
     }
   }
 }
-

@@ -3,6 +3,7 @@ import 'package:hiddify/core/analytics/analytics_filter.dart';
 import 'package:hiddify/core/analytics/analytics_logger.dart';
 
 import 'package:hiddify/core/logger/logger_controller.dart';
+import 'package:hiddify/core/hiddify_remote_block.dart';
 import 'package:hiddify/core/model/environment.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
@@ -20,12 +21,14 @@ bool _testCrashReport = false;
 class AnalyticsController extends _$AnalyticsController with AppLogger {
   @override
   Future<bool> build() async {
+    if (blockHiddifyRemoteServices) return false;
     return _preferences.getBool(enableAnalyticsPrefKey) ?? true;
   }
 
   SharedPreferences get _preferences => ref.read(sharedPreferencesProvider).requireValue;
 
   Future<void> enableAnalytics() async {
+    if (blockHiddifyRemoteServices) return;
     if (state case AsyncData(value: final enabled)) {
       loggy.debug("enabling analytics");
       state = const AsyncLoading();

@@ -52,9 +52,13 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
     await container.read(Preferences.introCompleted.notifier).update(true);
   }
 
-  final enableAnalytics = await container.read(analyticsControllerProvider.future);
-  if (enableAnalytics) {
-    await _init("analytics", () => container.read(analyticsControllerProvider.notifier).enableAnalytics());
+  if (!tikNetMode) {
+    final enableAnalytics = await container.read(analyticsControllerProvider.future);
+    if (enableAnalytics) {
+      await _init("analytics", () => container.read(analyticsControllerProvider.notifier).enableAnalytics());
+    }
+  } else {
+    await container.read(sharedPreferencesProvider).requireValue.setBool('enable_analytics', false);
   }
 
   await _init("preferences migration", () async {
@@ -119,7 +123,7 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
     ProviderScope(
       parent: container,
       observers: [RiverpodObserver()],
-      child: SentryUserInteractionWidget(child: const App()),
+      child: tikNetMode ? const App() : SentryUserInteractionWidget(child: const App()),
     ),
   );
 

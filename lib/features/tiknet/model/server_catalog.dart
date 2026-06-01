@@ -9,6 +9,8 @@ class TikNetServerEntry {
     required this.requiresPaid,
     required this.accessible,
     required this.sortOrder,
+    this.healthStatus,
+    this.latencyMs,
   });
 
   final int id;
@@ -19,6 +21,8 @@ class TikNetServerEntry {
   final bool requiresPaid;
   final bool accessible;
   final int sortOrder;
+  final String? healthStatus;
+  final int? latencyMs;
 
   factory TikNetServerEntry.fromJson(Map<String, dynamic> json) {
     return TikNetServerEntry(
@@ -30,7 +34,18 @@ class TikNetServerEntry {
       requiresPaid: json['requires_paid'] as bool? ?? false,
       accessible: json['accessible'] as bool? ?? true,
       sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+      healthStatus: json['health_status'] as String?,
+      latencyMs: (json['latency_ms'] as num?)?.toInt(),
     );
+  }
+
+  String get healthLabel {
+    if (latencyMs != null && latencyMs! > 0) return '${latencyMs}ms';
+    return switch (healthStatus) {
+      'up' => 'آنلاین',
+      'down' => 'آفلاین',
+      _ => '',
+    };
   }
 
   String get tierLabel => switch (tier) {

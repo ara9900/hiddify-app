@@ -96,6 +96,7 @@ class DialogNotifier extends _$DialogNotifier {
     required RemoteVersionEntity newVersion,
     required bool canIgnore,
   }) async {
+    if (tikNetMode) return;
     return await _show<void>(NewVersionDialog(currentVersion, newVersion, canIgnore: canIgnore));
   }
 
