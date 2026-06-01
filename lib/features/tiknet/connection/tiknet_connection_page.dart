@@ -5,10 +5,8 @@ import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
-import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
-import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
-import 'package:hiddify/features/stats/notifier/stats_notifier.dart';
+import 'package:hiddify/features/tiknet/connection/tiknet_connection_stats_provider.dart';
 import 'package:hiddify/features/tiknet/connection/tiknet_server_picker.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
@@ -25,8 +23,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final connectionStatus = ref.watch(connectionNotifierProvider);
-    final activeProxy = ref.watch(activeProxyNotifierProvider);
-    final stats = ref.watch(statsNotifierProvider).asData?.value;
+    final connectionStats = ref.watch(tiknetConnectionStatsProvider).valueOrNull;
     final requiresReconnect = ref.watch(configOptionNotifierProvider).valueOrNull ?? false;
 
     final subscriptionExpired = () {
@@ -156,10 +153,9 @@ class TikNetConnectionPage extends HookConsumerWidget {
                           _InfoRow(
                             icon: Icons.dns_rounded,
                             label: 'سرور فعلی',
-                            value: switch (activeProxy) {
-                              AsyncData(value: final p) => p.tagDisplay,
-                              _ => '—',
-                            },
+                            value: connectionStats?.outboundTag.isNotEmpty == true
+                                ? connectionStats!.outboundTag
+                                : '—',
                           ),
                           const Divider(height: 24, color: TikNetColors.border),
                           _InfoRow(
@@ -171,13 +167,17 @@ class TikNetConnectionPage extends HookConsumerWidget {
                           _InfoRow(
                             icon: Icons.arrow_upward_rounded,
                             label: 'سرعت آپلود',
-                            value: stats != null ? toPersianDigits(stats.uplink.toInt().speed()) : '—',
+                            value: connectionStats != null
+                                ? toPersianDigits(connectionStats.uplink.speed())
+                                : '—',
                           ),
                           const Divider(height: 24, color: TikNetColors.border),
                           _InfoRow(
                             icon: Icons.arrow_downward_rounded,
                             label: 'سرعت دانلود',
-                            value: stats != null ? toPersianDigits(stats.downlink.toInt().speed()) : '—',
+                            value: connectionStats != null
+                                ? toPersianDigits(connectionStats.downlink.speed())
+                                : '—',
                           ),
                         ],
                       ),
