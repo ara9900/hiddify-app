@@ -15,7 +15,8 @@ class TikNetLoginPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final usernameController = useTextEditingController();
+    final savedUsername = ref.read(authServiceProvider).getSavedUsername();
+    final usernameController = useTextEditingController(text: savedUsername);
     final passwordController = useTextEditingController();
     final isLoading = useState(false);
     final errorMsg = useState<String?>(null);

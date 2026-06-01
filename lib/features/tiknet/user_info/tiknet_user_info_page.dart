@@ -19,7 +19,7 @@ class TikNetUserInfoPage extends ConsumerWidget {
     ref.watch(Preferences.tikNetCachedProfile);
     ref.watch(Preferences.tikNetLastSyncTime);
 
-    if (!auth.isLoggedIn()) {
+    if (!auth.hasAppSession()) {
       return Scaffold(
         appBar: AppBar(title: const Text('حساب من'), centerTitle: true),
         body: Center(

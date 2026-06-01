@@ -12,6 +12,9 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
+/// Default app session length (also extended on each successful API call).
+const Duration tikNetSessionLifetime = Duration(days: 30);
+
 /// TikNet auth: login via panel API, token/subscription in SharedPreferences, helpers and logout.
 class AuthService {
   AuthService(this._ref);
@@ -54,15 +57,15 @@ class AuthService {
         throw AuthException('پاسخ سرور نامعتبر است');
       }
 
-      // expires_in is relative (seconds from now); store absolute expiry for isLoggedIn().
-      final expiresAt = expiresIn > 0
-          ? DateTime.now().add(Duration(seconds: expiresIn))
-          : null;
+      final serverExpiry = expiresIn > 0 ? DateTime.now().add(Duration(seconds: expiresIn)) : null;
+      final clientExpiry = DateTime.now().add(tikNetSessionLifetime);
+      final expiresAt = _laterExpiry(serverExpiry, clientExpiry);
 
       await _ref.read(Preferences.tikNetPanelBaseUrl.notifier).update(baseUrl);
       await _ref.read(Preferences.tikNetAccessToken.notifier).update(accessToken);
       await _ref.read(Preferences.tikNetTokenExpiresAt.notifier).update(expiresAt);
       await _ref.read(Preferences.tikNetSubscriptionUrl.notifier).update(subscriptionUrl ?? '');
+      await _ref.read(Preferences.tikNetSavedUsername.notifier).update(username.trim());
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode;
       final message = _messageForStatus(statusCode, e.type);
@@ -89,16 +92,48 @@ class AuthService {
     return 'اتصال به سرور ممکن نیست';
   }
 
-  /// True if token is present and not expired.
-  bool isLoggedIn() {
+  DateTime? _laterExpiry(DateTime? a, DateTime? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return a.isAfter(b) ? a : b;
+  }
+
+  /// True if token is present and session not expired (client-side).
+  bool isLoggedIn() => hasAppSession() && !_isSessionExpired();
+
+  /// Stay in app when token exists (even if panel unreachable / another VPN is on).
+  bool hasAppSession() {
+    if (_ref.read(Preferences.tikNetAccessToken).isNotEmpty) return true;
+    return _ref.read(Preferences.tikNetCachedProfile).isNotEmpty;
+  }
+
+  bool _isSessionExpired() {
     final token = _ref.read(Preferences.tikNetAccessToken);
+    if (token.isEmpty) return _ref.read(Preferences.tikNetCachedProfile).isEmpty;
     final expiresAt = _ref.read(Preferences.tikNetTokenExpiresAt);
-    if (token.isEmpty) return false;
-    if (expiresAt != null && DateTime.now().isAfter(expiresAt)) return false;
+    if (expiresAt == null) return false;
+    return DateTime.now().isAfter(expiresAt);
+  }
+
+  /// Sliding session — call after successful authenticated API requests.
+  Future<void> extendSession() async {
+    if (_ref.read(Preferences.tikNetAccessToken).isEmpty) return;
+    await _ref.read(Preferences.tikNetTokenExpiresAt.notifier).update(
+          DateTime.now().add(tikNetSessionLifetime),
+        );
+  }
+
+  /// Returns true if session was cleared (user must log in again).
+  /// Does NOT logout on 401 when session is still valid locally (VPN glitch / offline).
+  Future<bool> clearSessionIfUnauthorized() async {
+    if (!_isSessionExpired()) return false;
+    await logout();
     return true;
   }
 
   String getToken() => _ref.read(Preferences.tikNetAccessToken);
+
+  String getSavedUsername() => _ref.read(Preferences.tikNetSavedUsername);
 
   /// Returns subscription URL or null if not set.
   String? getSubscriptionUrl() {

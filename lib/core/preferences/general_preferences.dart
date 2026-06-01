@@ -111,6 +111,9 @@ abstract class Preferences {
     mapTo: (value) => value.name,
   );
 
+  /// TikNet: last username for login form prefill (not password)
+  static final tikNetSavedUsername = PreferencesNotifier.create<String, String>("tiknet_saved_username", "");
+
   /// TikNet: panel API base URL (e.g. https://panel.example.com)
   static final tikNetPanelBaseUrl = PreferencesNotifier.create<String, String>("tiknet_panel_base_url", "");
   /// TikNet: JWT access token after login

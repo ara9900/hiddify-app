@@ -38,7 +38,7 @@ class SyncService {
   /// Fetches [api_urls] unrelated — profile (GET /api/customer/me) and config (GET /api/customer/subscription/config).
   Future<bool> syncAll() async {
     final auth = _ref.read(authServiceProvider);
-    if (!auth.isLoggedIn()) return false;
+    if (!auth.hasAppSession()) return false;
 
     final baseUrl = _ref.read(Preferences.tikNetPanelBaseUrl);
     final token = auth.getToken();
@@ -56,10 +56,10 @@ class SyncService {
       await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
 
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
+      await auth.extendSession();
       return true;
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        await auth.logout();
+      if (e.response?.statusCode == 401 && await auth.clearSessionIfUnauthorized()) {
         throw SyncTokenExpiredException();
       }
       return false;
@@ -73,7 +73,7 @@ class SyncService {
   /// Fetch and apply config for current server selection (personal or catalog).
   Future<bool> applySelectedServerConfig() async {
     final auth = _ref.read(authServiceProvider);
-    if (!auth.isLoggedIn()) return false;
+    if (!auth.hasAppSession()) return false;
     final baseUrl = _ref.read(Preferences.tikNetPanelBaseUrl);
     final token = auth.getToken();
     if (baseUrl.isEmpty || token.isEmpty) return false;
@@ -84,10 +84,10 @@ class SyncService {
       if (configBytes.isEmpty) return false;
       await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
+      await auth.extendSession();
       return applyProfileFromCache();
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        await auth.logout();
+      if (e.response?.statusCode == 401 && await auth.clearSessionIfUnauthorized()) {
         throw SyncTokenExpiredException();
       }
       return false;

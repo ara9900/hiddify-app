@@ -7,7 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 final serverCatalogProvider = FutureProvider<TikNetServerCatalog>((ref) async {
   ref.watch(Preferences.tikNetAccessToken);
   final auth = ref.read(authServiceProvider);
-  if (!auth.isLoggedIn()) {
+  if (!auth.hasAppSession()) {
     return const TikNetServerCatalog(personalAvailable: false, servers: []);
   }
   final baseUrl = ref.read(Preferences.tikNetPanelBaseUrl);

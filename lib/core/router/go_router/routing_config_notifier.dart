@@ -74,9 +74,10 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
     if (tikNet) {
       ref.watch(Preferences.tikNetAccessToken);
       ref.watch(Preferences.tikNetTokenExpiresAt);
+      ref.watch(Preferences.tikNetCachedProfile);
       bool tikNetLoggedIn = false;
       try {
-        tikNetLoggedIn = ref.read(authServiceProvider).isLoggedIn();
+        tikNetLoggedIn = ref.read(authServiceProvider).hasAppSession();
       } catch (_) {}
       return _buildTikNetConfig(tikNetLoggedIn, true);
     }
