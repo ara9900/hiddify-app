@@ -286,6 +286,10 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
       redirect: (context, state) {
         if (!tikNetLoggedIn && !state.matchedLocation.startsWith('/login')) return '/login';
         if (tikNetLoggedIn && state.matchedLocation == '/login') return '/home';
+        // Never surface Hiddify intro / add-profile flows (deep links, /intro).
+        if (state.matchedLocation == '/intro' || state.uri.queryParameters.containsKey('url')) {
+          return tikNetLoggedIn ? '/home' : '/login';
+        }
         return null;
       },
       routes: <RouteBase>[
@@ -314,14 +318,6 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                   name: 'home',
                   path: '/home',
                   builder: (_, _) => FocusScope(node: branchesScope['home'], child: const HomePage()),
-                  routes: <GoRoute>[
-                    GoRoute(
-                      name: 'proxies',
-                      path: '/proxies',
-                      pageBuilder: (_, state) =>
-                          customTransition(TransitionType.fade, state.pageKey, const ProxiesOverviewPage()),
-                    ),
-                  ],
                 ),
               ],
             ),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/features/window/notifier/window_notifier.dart';
@@ -60,6 +61,7 @@ class ShortcutWrapper extends HookConsumerWidget {
           ),
           PasteIntent: CallbackAction(
             onInvoke: (_) async {
+              if (tikNetMode) return null;
               if (rootNavKey.currentContext != null) {
                 final captureResult = await Clipboard.getData(Clipboard.kTextPlain).then((value) => value?.text ?? '');
                 ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(url: captureResult);

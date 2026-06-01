@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/preferences/actions_at_closing.dart';
 import 'package:hiddify/core/router/dialog/widgets/action_at_closing_dialog.dart';
 import 'package:hiddify/core/router/dialog/widgets/confirmation_dialog.dart';
@@ -115,6 +116,7 @@ class DialogNotifier extends _$DialogNotifier {
   }
 
   Future<bool> showExperimentalFeatureNotice() async {
+    if (tikNetMode) return true;
     final hasExperimental = ref.read(ConfigOptions.hasExperimentalFeatures);
     final canShowNotice = !ref.read(disableExperimentalFeatureNoticeProvider);
     if (hasExperimental && canShowNotice) {
@@ -124,6 +126,7 @@ class DialogNotifier extends _$DialogNotifier {
   }
 
   Future<void> showNoActiveProfile() async {
+    if (tikNetMode) return;
     return await _show<void>(const NoActiveProfileDialog());
   }
 

@@ -1,6 +1,7 @@
 import 'package:dartx/dartx.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
@@ -21,6 +22,9 @@ class ForegroundProfilesUpdateNotifier extends _$ForegroundProfilesUpdateNotifie
 
   @override
   Stream<ProfileUpdateStatus?> build() {
+    if (tikNetMode) {
+      return const Stream.empty();
+    }
     var cycleCount = 0;
     _scheduler = NeatPeriodicTaskScheduler(
       name: 'profiles update worker',

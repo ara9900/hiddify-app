@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
-import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -9,12 +8,11 @@ import 'package:hiddify/features/settings/notifier/config_option/config_option_n
 import 'package:hiddify/features/tiknet/connection/tiknet_connection_stats_provider.dart';
 import 'package:hiddify/features/tiknet/connection/tiknet_server_picker.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
+import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hiddify/utils/number_formatters.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
-import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 
 class TikNetConnectionPage extends HookConsumerWidget {
   const TikNetConnectionPage({super.key});
@@ -129,14 +127,33 @@ class TikNetConnectionPage extends HookConsumerWidget {
                         enabled: enabled && !subscriptionExpired,
                         onTap: () async {
                           if (ref.read(activeProfileProvider).valueOrNull == null) {
-                            await ref.read(dialogNotifierProvider.notifier).showNoActiveProfile();
-                            ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile();
-                            return;
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('در حال دریافت کانفیگ از پنل...')),
+                            );
+                            final sync = ref.read(syncServiceProvider);
+                            try {
+                              final ok = await sync.syncAllAndApplyProfile();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              if (!ok || ref.read(activeProfileProvider).valueOrNull == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'کانفیگ آماده نیست. از «حساب من» → بروزرسانی دوباره تلاش کنید.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                            } on SyncTokenExpiredException {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              }
+                              return;
+                            }
                           }
-                          if (tikNetMode ||
-                              await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
-                            await ref.read(connectionNotifierProvider.notifier).toggleConnection();
-                          }
+                          await ref.read(connectionNotifierProvider.notifier).toggleConnection();
                         },
                       ),
                     ),
