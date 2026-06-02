@@ -266,6 +266,27 @@ class TikNetApi {
     return response.data ?? [];
   }
 
+  /// GET /api/customer/servers/health — cached ping probes (best effort).
+  Future<List<Map<String, dynamic>>> getServersHealth({
+    required String baseUrl,
+    required String accessToken,
+    bool force = false,
+  }) async {
+    final dio = _dio(baseUrl);
+    try {
+      final response = await dio.get<Map<String, dynamic>>(
+        '/api/customer/servers/health',
+        queryParameters: force ? {'force': 'true'} : null,
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      final servers = response.data?['servers'];
+      if (servers is! List) return const [];
+      return servers.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// GET /api/customer/servers
   Future<Map<String, dynamic>> getServerCatalog({required String baseUrl, required String accessToken}) async {
     final dio = _dio(baseUrl);

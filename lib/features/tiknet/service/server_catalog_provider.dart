@@ -16,8 +16,14 @@ final serverCatalogProvider = FutureProvider<TikNetServerCatalog>((ref) async {
     return const TikNetServerCatalog(personalAvailable: false, servers: []);
   }
   try {
-    final data = await ref.read(tikNetApiProvider).getServerCatalog(baseUrl: baseUrl, accessToken: token);
-    return TikNetServerCatalog.fromJson(data);
+    final api = ref.read(tikNetApiProvider);
+    final data = await api.getServerCatalog(baseUrl: baseUrl, accessToken: token);
+    var catalog = TikNetServerCatalog.fromJson(data);
+    try {
+      final health = await api.getServersHealth(baseUrl: baseUrl, accessToken: token);
+      catalog = catalog.mergeHealth(health);
+    } catch (_) {}
+    return catalog;
   } catch (_) {
     return const TikNetServerCatalog(personalAvailable: false, servers: []);
   }

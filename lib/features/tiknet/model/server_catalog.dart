@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 /// Catalog server entry from panel GET /api/customer/servers
 class TikNetServerEntry {
   const TikNetServerEntry({
@@ -39,13 +41,28 @@ class TikNetServerEntry {
     );
   }
 
-  String get healthLabel {
-    if (latencyMs != null && latencyMs! > 0) return '${latencyMs}ms';
+  bool get isHealthDown => healthStatus == 'down';
+
+  bool get hasPing => latencyMs != null && latencyMs! > 0;
+
+  String get pingLabel {
+    if (hasPing) return '${latencyMs} ms';
     return switch (healthStatus) {
       'up' => 'آنلاین',
       'down' => 'آفلاین',
-      _ => '',
+      'unknown' => '—',
+      _ => '—',
     };
+  }
+
+  /// Green / yellow / red / grey for ping chip.
+  Color get pingColor {
+    if (isHealthDown) return const Color(0xFFEF4444);
+    if (!hasPing) return const Color(0xFF9E9E9E);
+    final ms = latencyMs!;
+    if (ms <= 120) return const Color(0xFF22C55E);
+    if (ms <= 250) return const Color(0xFFEAB308);
+    return const Color(0xFFF97316);
   }
 
   String get tierLabel => switch (tier) {
@@ -102,6 +119,88 @@ class TikNetServerCatalog {
     }
     return map;
   }
+
+  TikNetServerCatalog mergeHealth(List<Map<String, dynamic>> healthRows) {
+    if (healthRows.isEmpty) return this;
+    final byId = <int, Map<String, dynamic>>{};
+    for (final row in healthRows) {
+      final id = (row['id'] as num?)?.toInt();
+      if (id != null) byId[id] = row;
+    }
+    final merged = servers.map((s) {
+      final h = byId[s.id];
+      if (h == null) return s;
+      return TikNetServerEntry(
+        id: s.id,
+        name: s.name,
+        countryCode: s.countryCode,
+        tier: s.tier,
+        sourceType: s.sourceType,
+        requiresPaid: s.requiresPaid,
+        accessible: s.accessible,
+        sortOrder: s.sortOrder,
+        healthStatus: (h['health_status'] as String?) ?? s.healthStatus,
+        latencyMs: (h['latency_ms'] as num?)?.toInt() ?? s.latencyMs,
+      );
+    }).toList();
+    return TikNetServerCatalog(personalAvailable: personalAvailable, servers: merged);
+  }
+}
+
+/// Resolved label for current server selection.
+class TikNetSelectedServerInfo {
+  const TikNetSelectedServerInfo({
+    required this.title,
+    required this.subtitle,
+    this.countryCode,
+    this.personal = false,
+    this.pingLabel,
+    this.pingColor,
+    this.isHealthDown = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final String? countryCode;
+  final bool personal;
+  final String? pingLabel;
+  final Color? pingColor;
+  final bool isHealthDown;
+}
+
+TikNetSelectedServerInfo resolveSelectedServerInfo({
+  required TikNetServerSelection selected,
+  TikNetServerCatalog? catalog,
+}) {
+  if (selected.isPersonal || selected.catalogId == null) {
+    return const TikNetSelectedServerInfo(
+      title: 'اشتراک من',
+      subtitle: 'کانفیگ اختصاصی حساب شما',
+      personal: true,
+    );
+  }
+  TikNetServerEntry? match;
+  for (final s in catalog?.servers ?? const <TikNetServerEntry>[]) {
+    if (s.id == selected.catalogId) {
+      match = s;
+      break;
+    }
+  }
+  if (match != null) {
+    final parts = <String>[match.countryLabel, match.tierLabel].where((e) => e.isNotEmpty);
+    return TikNetSelectedServerInfo(
+      title: match.name,
+      subtitle: parts.join(' · '),
+      countryCode: match.countryCode,
+      pingLabel: match.pingLabel,
+      pingColor: match.pingColor,
+      isHealthDown: match.isHealthDown,
+    );
+  }
+  return TikNetSelectedServerInfo(
+    title: 'سرور #${selected.catalogId}',
+    subtitle: 'کاتالوگ',
+  );
 }
 
 typedef TikNetServerSelection = ({bool isPersonal, int? catalogId});

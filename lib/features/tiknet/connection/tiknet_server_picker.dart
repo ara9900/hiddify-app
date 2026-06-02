@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
+import 'package:hiddify/features/connection/model/connection_status.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/widgets/tiknet_country_flag.dart';
+import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class TikNetServerPickerSheet extends ConsumerWidget {
@@ -13,13 +17,19 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: TikNetColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => const Padding(
-        padding: EdgeInsets.only(bottom: 24),
-        child: TikNetServerPickerSheet(),
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.72,
+        minChildSize: 0.45,
+        maxChildSize: 0.92,
+        builder: (_, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: TikNetColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(top: BorderSide(color: TikNetColors.border)),
+          ),
+          child: TikNetServerPickerSheet(scrollController: scrollController),
+        ),
       ),
     );
   }
@@ -30,103 +40,105 @@ class TikNetServerPickerSheet extends ConsumerWidget {
         _ => 'رایگان',
       };
 
+  final ScrollController? scrollController;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final catalogAsync = ref.watch(serverCatalogProvider);
     final selected = ref.watch(selectedServerProvider);
     final sync = ref.read(syncServiceProvider);
+    final vpnConnected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
 
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'انتخاب سرور',
-                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
-              ],
-            ),
+    return Column(
+      children: [
+        const Gap(10),
+        Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+            color: TikNetColors.onSurfaceVariant.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(2),
           ),
-          const Divider(height: 1, color: TikNetColors.border),
-          Flexible(
-            child: catalogAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              error: (_, _) => Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'خطا در بارگذاری لیست سرورها.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
-              ),
-              data: (catalog) {
-                final groups = catalog.groupedByTier();
-                const tierOrder = ['free', 'normal', 'vip'];
-                return ListView(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (catalog.personalAvailable)
-                      _ServerTile(
-                        title: 'اشتراک من',
-                        subtitle: 'کانفیگ اختصاصی حساب شما',
-                        selected: selected.isPersonal,
-                        enabled: true,
-                        onTap: () => _select(context, ref, sync, (isPersonal: true, catalogId: null)),
-                      ),
-                    for (final tier in tierOrder)
-                      if (groups[tier]?.isNotEmpty == true) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
-                          child: Text(
-                            tierTitle(tier),
-                            style: theme.textTheme.titleSmall?.copyWith(color: TikNetColors.primary),
-                          ),
-                        ),
-                        ...groups[tier]!.map(
-                          (s) {
-                            final health = s.healthLabel;
-                            final subParts = [s.countryLabel, s.tierLabel, if (health.isNotEmpty) health]
-                                .where((e) => e.isNotEmpty)
-                                .join(' · ');
-                            return _ServerTile(
-                              title: s.name,
-                              subtitle: subParts,
-                              selected: !selected.isPersonal && selected.catalogId == s.id,
-                              enabled: s.accessible,
-                              locked: !s.accessible,
-                              healthDown: s.healthStatus == 'down',
-                              onTap: s.accessible
-                                  ? () => _select(context, ref, sync, (isPersonal: false, catalogId: s.id))
-                                  : null,
-                            );
-                          },
-                        ),
-                      ],
-                    if (!catalog.personalAvailable && catalog.servers.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text('سروری در پنل ثبت نشده است.', textAlign: TextAlign.center),
-                      ),
+                    Text('انتخاب سرور', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    const Gap(4),
+                    Text(
+                      vpnConnected ? 'VPN متصل است — تغییر سرور اتصال را قطع می‌کند' : 'سرور مورد نظر را انتخاب کنید',
+                      style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
+                    ),
                   ],
-                );
-              },
-            ),
+                ),
+              ),
+              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
+            ],
           ),
-        ],
-      ),
+        ),
+        const Divider(height: 1, color: TikNetColors.border),
+        Expanded(
+          child: catalogAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (_, _) => Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('خطا در بارگذاری سرورها.', style: TextStyle(color: theme.colorScheme.error)),
+              ),
+            ),
+            data: (catalog) {
+              final groups = catalog.groupedByTier();
+              const tierOrder = ['free', 'normal', 'vip'];
+              return ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                children: [
+                  if (catalog.personalAvailable)
+                    _ServerRow(
+                      title: 'اشتراک من',
+                      subtitle: 'کانفیگ اختصاصی حساب شما',
+                      personal: true,
+                      selected: selected.isPersonal,
+                      enabled: true,
+                      onTap: () => _select(context, ref, sync, (isPersonal: true, catalogId: null)),
+                    ),
+                  for (final tier in tierOrder)
+                    if (groups[tier]?.isNotEmpty == true) ...[
+                      _SectionHeader(title: tierTitle(tier)),
+                      ...groups[tier]!.map(
+                        (s) => _ServerRow(
+                          title: s.name,
+                          subtitle: [s.countryLabel, s.tierLabel].where((e) => e.isNotEmpty).join(' · '),
+                          countryCode: s.countryCode,
+                          selected: !selected.isPersonal && selected.catalogId == s.id,
+                          enabled: s.accessible,
+                          locked: !s.accessible,
+                          pingLabel: s.pingLabel,
+                          pingColor: s.pingColor,
+                          isHealthDown: s.isHealthDown,
+                          onTap: s.accessible
+                              ? () => _select(context, ref, sync, (isPersonal: false, catalogId: s.id))
+                              : null,
+                        ),
+                      ),
+                    ],
+                  if (!catalog.personalAvailable && catalog.servers.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Text('سروری در پنل ثبت نشده است.', textAlign: TextAlign.center),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -141,14 +153,17 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     ref.invalidate(serverCatalogProvider);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('در حال اعمال کانفیگ سرور...')),
+      const SnackBar(content: Text('در حال اعمال کانفیگ سرور...'), behavior: SnackBarBehavior.floating),
     );
     try {
       final ok = await sync.applySelectedServerConfig();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? 'سرور انتخاب شد.' : 'اعمال کانفیگ ناموفق بود.')),
+        SnackBar(
+          content: Text(ok ? 'سرور انتخاب شد.' : 'اعمال کانفیگ ناموفق بود.'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } on SyncTokenExpiredException {
       if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
@@ -156,41 +171,113 @@ class TikNetServerPickerSheet extends ConsumerWidget {
   }
 }
 
-class _ServerTile extends StatelessWidget {
-  const _ServerTile({
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 8, right: 4),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: TikNetColors.primary,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+}
+
+class _ServerRow extends StatelessWidget {
+  const _ServerRow({
     required this.title,
     required this.subtitle,
     required this.selected,
     required this.enabled,
+    this.countryCode,
+    this.personal = false,
     this.locked = false,
-    this.healthDown = false,
+    this.pingLabel,
+    this.pingColor,
+    this.isHealthDown = false,
     this.onTap,
   });
 
   final String title;
   final String subtitle;
+  final String? countryCode;
+  final bool personal;
   final bool selected;
   final bool enabled;
   final bool locked;
-  final bool healthDown;
+  final String? pingLabel;
+  final Color? pingColor;
+  final bool isHealthDown;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      enabled: enabled,
-      onTap: onTap,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      tileColor: selected ? TikNetColors.primary.withValues(alpha: 0.15) : null,
-      leading: Icon(
-        locked ? Icons.lock_outline_rounded : (healthDown ? Icons.cloud_off_rounded : Icons.public_rounded),
-        color: healthDown
-            ? TikNetColors.error
-            : (selected ? TikNetColors.primary : TikNetColors.onSurfaceVariant),
+    final theme = Theme.of(context);
+    final borderColor = selected ? TikNetColors.primary : TikNetColors.border;
+    final bg = selected ? TikNetColors.primary.withValues(alpha: 0.1) : TikNetColors.surfaceVariant.withValues(alpha: 0.35);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(16),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  TikNetCountryFlag(countryCode: countryCode, personal: personal, size: 44),
+                  const Gap(12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                          ),
+                        ),
+                        if (subtitle.isNotEmpty) ...[
+                          const Gap(2),
+                          Text(
+                            subtitle,
+                            style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (locked)
+                    const Icon(Icons.lock_outline_rounded, color: TikNetColors.onSurfaceVariant, size: 20)
+                  else if (pingLabel != null && pingColor != null) ...[
+                    TikNetPingChip(label: pingLabel!, color: pingColor!, compact: true),
+                    const Gap(8),
+                  ],
+                  if (selected)
+                    const Icon(Icons.check_circle_rounded, color: TikNetColors.primary, size: 22)
+                  else if (isHealthDown)
+                    Icon(Icons.cloud_off_rounded, color: TikNetColors.error.withValues(alpha: 0.8), size: 20),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
-      title: Text(title, style: TextStyle(fontWeight: selected ? FontWeight.bold : FontWeight.w500)),
-      subtitle: Text(subtitle, style: const TextStyle(color: TikNetColors.onSurfaceVariant, fontSize: 12)),
-      trailing: selected ? const Icon(Icons.check_circle_rounded, color: TikNetColors.primary) : null,
     );
   }
 }
@@ -203,52 +290,104 @@ class TikNetServerSelectorCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final selected = ref.watch(selectedServerProvider);
     final catalog = ref.watch(serverCatalogProvider).valueOrNull;
+    final info = resolveSelectedServerInfo(selected: selected, catalog: catalog);
+    final vpnConnected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
 
-    var label = 'اشتراک من';
-    var sub = 'کانفیگ حساب شما';
-    if (!selected.isPersonal && selected.catalogId != null) {
-      TikNetServerEntry? match;
-      for (final s in catalog?.servers ?? const <TikNetServerEntry>[]) {
-        if (s.id == selected.catalogId) {
-          match = s;
-          break;
-        }
-      }
-      if (match != null) {
-        label = match.name;
-        final parts = [match.countryLabel, match.tierLabel, if (match.healthLabel.isNotEmpty) match.healthLabel];
-        sub = parts.where((e) => e.isNotEmpty).join(' · ');
-      } else {
-        label = 'سرور #${selected.catalogId}';
-        sub = 'کاتالوگ';
-      }
-    }
-
-    return Card(
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => TikNetServerPickerSheet.show(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              const Icon(Icons.dns_rounded, color: TikNetColors.primary),
-              const Gap(12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          ref.invalidate(serverCatalogProvider);
+          TikNetServerPickerSheet.show(context);
+        },
+        child: Ink(
+          decoration: BoxDecoration(
+            color: TikNetColors.surfaceVariant.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: TikNetColors.border),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                TikNetCountryFlag(
+                  countryCode: info.countryCode,
+                  personal: info.personal,
+                  size: 48,
+                ),
+                const Gap(14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'سرور انتخابی',
+                            style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
+                          ),
+                          const Spacer(),
+                          if (vpnConnected)
+                            _MiniStatusPill(label: 'VPN روشن', color: TikNetColors.connected)
+                          else
+                            _MiniStatusPill(label: 'VPN خاموش', color: TikNetColors.disconnected),
+                        ],
+                      ),
+                      const Gap(6),
+                      Text(
+                        info.title,
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      if (info.subtitle.isNotEmpty) ...[
+                        const Gap(2),
+                        Text(
+                          info.subtitle,
+                          style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const Gap(8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('سرور', style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant)),
-                    Text(label, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-                    if (sub.isNotEmpty)
-                      Text(sub, style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant)),
+                    if (info.pingLabel != null && info.pingColor != null)
+                      TikNetPingChip(label: info.pingLabel!, color: info.pingColor!, compact: true),
+                    const Gap(8),
+                    const Icon(Icons.unfold_more_rounded, color: TikNetColors.onSurfaceVariant),
                   ],
                 ),
-              ),
-              const Icon(Icons.expand_more_rounded, color: TikNetColors.onSurfaceVariant),
-            ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MiniStatusPill extends StatelessWidget {
+  const _MiniStatusPill({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const Gap(5),
+          Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }
