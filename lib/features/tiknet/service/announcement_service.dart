@@ -61,9 +61,12 @@ class AnnouncementService {
       return githubMsg;
     }
 
-    // c) Else read from Preferences.tikNetCachedAnnouncement; if invalid return show: false
-    final cached = _readFromCache();
-    return cached ?? AnnouncementMessage(show: false, type: 'info', text: '');
+    // c) Cached announcement only while logged in (avoid stale data after reinstall/backup).
+    if (auth.isLoggedIn()) {
+      final cached = _readFromCache();
+      if (cached != null) return cached;
+    }
+    return AnnouncementMessage(show: false, type: 'info', text: '');
   }
 
   Future<AnnouncementMessage?> _fetchFromPanel(String baseUrl) async {

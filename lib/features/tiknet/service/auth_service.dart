@@ -1,5 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/profile/data/profile_data_providers.dart';
+import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -102,15 +105,11 @@ class AuthService {
   /// True if token is present and session not expired (client-side).
   bool isLoggedIn() => hasAppSession() && !_isSessionExpired();
 
-  /// Stay in app when token exists (even if panel unreachable / another VPN is on).
-  bool hasAppSession() {
-    if (_ref.read(Preferences.tikNetAccessToken).isNotEmpty) return true;
-    return _ref.read(Preferences.tikNetCachedProfile).isNotEmpty;
-  }
+  /// True when a panel access token is stored (not offline profile cache alone).
+  bool hasAppSession() => _ref.read(Preferences.tikNetAccessToken).isNotEmpty;
 
   bool _isSessionExpired() {
-    final token = _ref.read(Preferences.tikNetAccessToken);
-    if (token.isEmpty) return _ref.read(Preferences.tikNetCachedProfile).isEmpty;
+    if (_ref.read(Preferences.tikNetAccessToken).isEmpty) return true;
     final expiresAt = _ref.read(Preferences.tikNetTokenExpiresAt);
     if (expiresAt == null) return false;
     return DateTime.now().isAfter(expiresAt);
@@ -142,8 +141,11 @@ class AuthService {
     return url.isEmpty ? null : url;
   }
 
-  /// Clears panel URL, token, expires_at, subscription_url, and sync cache.
+  /// Clears panel URL, token, expires_at, subscription_url, sync cache, and VPN profile.
   Future<void> logout() async {
+    await _ref.read(connectionNotifierProvider.notifier).abortConnection();
+    await _ref.read(Preferences.startedByUser.notifier).update(false);
+
     final baseUrl = _ref.read(Preferences.tikNetPanelBaseUrl);
     final token = _ref.read(Preferences.tikNetAccessToken);
     if (baseUrl.isNotEmpty && token.isNotEmpty) {
@@ -160,6 +162,18 @@ class AuthService {
     await _ref.read(Preferences.tikNetSavedUsername.notifier).update('');
     await _ref.read(Preferences.tikNetSelectedServer.notifier).update('personal');
     await _ref.read(Preferences.tikNetCachedAnnouncement.notifier).update('');
+
+    try {
+      final repo = await _ref.read(profileRepositoryProvider.future);
+      final listResult = await repo.watchAll().first;
+      await listResult.fold((_) async {}, (profiles) async {
+        for (final p in profiles) {
+          if (p.userOverride?.name == tikNetProfileDisplayName || p.name == tikNetProfileDisplayName) {
+            await repo.deleteById(p.id, p.active).run();
+          }
+        }
+      });
+    } catch (_) {}
   }
 }
 

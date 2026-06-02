@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
@@ -40,6 +41,15 @@ class TikNetConnectionPage extends HookConsumerWidget {
       return exp != null && DateTime.now().isAfter(exp);
     }();
     final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider)?.expireDate;
+
+    useEffect(() {
+      if (subscriptionExpired && ref.read(connectionNotifierProvider).valueOrNull is Connected) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ref.read(connectionNotifierProvider.notifier).abortConnection();
+        });
+      }
+      return null;
+    }, [subscriptionExpired]);
 
     final isConnected = connectionStatus.valueOrNull is Connected;
     final isConnecting = connectionStatus.valueOrNull is Connecting;

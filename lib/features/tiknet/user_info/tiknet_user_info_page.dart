@@ -39,7 +39,7 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
     ref.watch(Preferences.tikNetLastSyncTime);
     final unread = ref.watch(tikNetUnreadCountProvider);
 
-    if (!auth.hasAppSession()) {
+    if (!auth.isLoggedIn()) {
       return Scaffold(
         appBar: AppBar(title: const Text('حساب من'), centerTitle: true),
         body: Center(

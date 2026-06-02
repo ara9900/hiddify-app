@@ -9,7 +9,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 final tikNetUserInfoProvider = Provider<TikNetUserInfo?>((ref) {
   if (!tikNetMode) return null;
   final auth = ref.watch(authServiceProvider);
-  if (!auth.hasAppSession()) return null;
+  if (!auth.isLoggedIn()) return null;
   ref.watch(Preferences.tikNetCachedProfile);
   return ref.read(syncServiceProvider).getProfile();
 });

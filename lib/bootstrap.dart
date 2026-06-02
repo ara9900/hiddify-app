@@ -23,6 +23,7 @@ import 'package:hiddify/features/log/data/log_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/system_tray/notifier/system_tray_notifier.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_session_guard.dart';
 import 'package:hiddify/features/window/notifier/window_notifier.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/riverpod_observer.dart';
@@ -71,6 +72,10 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
       await container.read(sharedPreferencesProvider).requireValue.clear();
     }
   });
+
+  if (tikNetMode) {
+    await _init("tiknet session", () => reconcileTikNetSession(container));
+  }
 
   final debug = container.read(debugModeNotifierProvider) || kDebugMode;
 
