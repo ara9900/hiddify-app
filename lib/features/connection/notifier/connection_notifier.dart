@@ -160,13 +160,28 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   Future<void> _disconnect() async {
-    await _connectionRepo.disconnect().mapLeft((err) {
-      loggy.warning("error disconnecting", err);
-      ref
+    final either = await _connectionRepo.disconnect().run();
+    ConnectionFailure? disconnectErr;
+    either.match(
+      (l) {
+        disconnectErr = l;
+      },
+      (_) {
+      },
+    );
+
+    if (disconnectErr != null) {
+      loggy.warning("error disconnecting", disconnectErr);
+      await ref
           .read(dialogNotifierProvider.notifier)
-          .showCustomAlertFromErr(err.present(ref.read(translationsProvider).requireValue));
-      state = AsyncError(err, StackTrace.current);
-    }).run();
+          .showCustomAlertFromErr(disconnectErr!.present(ref.read(translationsProvider).requireValue));
+      state = AsyncError(disconnectErr!, StackTrace.current);
+      return;
+    }
+
+    // If core status stream is delayed/stuck, keep UI consistent.
+    await ref.read(Preferences.startedByUser.notifier).update(false);
+    state = const AsyncData(Disconnected());
   }
 }
 
