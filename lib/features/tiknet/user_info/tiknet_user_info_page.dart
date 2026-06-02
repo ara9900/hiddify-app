@@ -323,6 +323,8 @@ class _RenewButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (profile?.shopEnabled == false) return const SizedBox.shrink();
+
     return FutureBuilder<List<TikNetCustomerOrder>>(
       future: _loadOrders(ref),
       builder: (context, snapshot) {

@@ -213,6 +213,7 @@ class SyncService {
       if (p.daysRemaining != null) 'days_remaining': p.daysRemaining,
       if (p.trafficUsedBytes != null) 'traffic_used_bytes': p.trafficUsedBytes,
       if (p.trafficLimitBytes != null) 'traffic_limit_bytes': p.trafficLimitBytes,
+      'shop_enabled': p.shopEnabled,
       if (p.brand != null && !p.brand!.isEmpty)
         'brand': {
           'name': p.brand!.name,

@@ -45,6 +45,7 @@ class TikNetUserInfo {
     this.trafficUsedBytes,
     this.trafficLimitBytes,
     this.brand,
+    this.shopEnabled = true,
   });
   final String username;
   final String? fullName;
@@ -56,6 +57,7 @@ class TikNetUserInfo {
   final int? trafficUsedBytes;
   final int? trafficLimitBytes;
   final TikNetBrand? brand;
+  final bool shopEnabled;
 
   factory TikNetUserInfo.fromJson(Map<String, dynamic> json) {
     final expireStr = json['expire_date'] as String?;
@@ -71,6 +73,7 @@ class TikNetUserInfo {
       trafficUsedBytes: (json['traffic_used_bytes'] as num?)?.toInt(),
       trafficLimitBytes: (json['traffic_limit_bytes'] as num?)?.toInt(),
       brand: brandRaw is Map ? TikNetBrand.fromJson(Map<String, dynamic>.from(brandRaw)) : null,
+      shopEnabled: json['shop_enabled'] as bool? ?? true,
     );
   }
 }
