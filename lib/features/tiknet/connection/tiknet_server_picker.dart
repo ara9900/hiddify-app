@@ -11,7 +11,7 @@ import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class TikNetServerPickerSheet extends ConsumerWidget {
-  const TikNetServerPickerSheet({super.key});
+  const TikNetServerPickerSheet({super.key, this.scrollController});
 
   static Future<void> show(BuildContext context) {
     return showModalBottomSheet<void>(

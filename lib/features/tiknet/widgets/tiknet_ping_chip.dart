@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hiddify/utils/number_formatters.dart';
+import 'package:hiddify/utils/shamsi_date_format.dart';
 
 /// Small latency / health badge for server rows.
 class TikNetPingChip extends StatelessWidget {

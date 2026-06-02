@@ -1,6 +1,6 @@
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
-import 'package:hiddify/utils/number_formatters.dart';
+import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Live connection duration while VPN is connected.
