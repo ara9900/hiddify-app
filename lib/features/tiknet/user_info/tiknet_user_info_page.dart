@@ -4,23 +4,39 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/tiknet/help/tiknet_faq_page.dart';
+import 'package:hiddify/features/tiknet/inbox/tiknet_notifications_page.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_notification_service.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// TikNet: حساب من — نام کاربر، وضعیت اشتراک، تاریخ انقضا، روزهای باقی‌مانده، آخرین بروزرسانی، دکمه سینک و خروج.
-class TikNetUserInfoPage extends ConsumerWidget {
+class TikNetUserInfoPage extends ConsumerStatefulWidget {
   const TikNetUserInfoPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TikNetUserInfoPage> createState() => _TikNetUserInfoPageState();
+}
+
+class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(tikNetInboxProvider);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final auth = ref.watch(authServiceProvider);
     ref.watch(Preferences.tikNetCachedProfile);
     ref.watch(Preferences.tikNetLastSyncTime);
+    final unread = ref.watch(tikNetUnreadCountProvider);
 
     if (!auth.hasAppSession()) {
       return Scaffold(
@@ -47,6 +63,25 @@ class TikNetUserInfoPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('حساب من'),
         centerTitle: true,
+        actions: [
+          if (unread > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: TikNetColors.error,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    toPersianDigits('$unread'),
+                    style: theme.textTheme.labelSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -131,6 +166,21 @@ class TikNetUserInfoPage extends ConsumerWidget {
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
+          ),
+          const Gap(12),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const TikNetNotificationsPage()),
+              );
+            },
+            icon: Badge(
+              isLabelVisible: unread > 0,
+              label: Text(toPersianDigits('$unread')),
+              child: const Icon(Icons.notifications_outlined),
+            ),
+            label: const Text('اعلان‌ها'),
+            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
           ),
           const Gap(12),
           OutlinedButton.icon(

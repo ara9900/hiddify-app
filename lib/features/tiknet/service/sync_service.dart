@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -12,8 +13,9 @@ import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import 'auth_service.dart';
-import 'tiknet_api.dart';
+import 'package:hiddify/features/tiknet/service/auth_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
 
 /// Thrown when sync fails due to 401 (token expired). Caller should redirect to login.
 class SyncTokenExpiredException implements Exception {
@@ -57,6 +59,7 @@ class SyncService {
 
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
       await auth.extendSession();
+      unawaited(_ref.read(tikNetDeviceServiceProvider).registerIfLoggedIn());
       return true;
     } on DioException catch (e) {
       if (e.response?.statusCode == 401 && await auth.clearSessionIfUnauthorized()) {

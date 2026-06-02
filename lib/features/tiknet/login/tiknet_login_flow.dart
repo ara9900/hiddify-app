@@ -6,6 +6,8 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_notification_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/update/tiknet_app_update_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -33,6 +35,8 @@ Future<void> completeTikNetLoginFlow(WidgetRef ref, BuildContext context) async 
 
   if (context.mounted) context.go('/home');
   await ref.read(tikNetTelemetryServiceProvider).sendAppOpenOnce();
+  await ref.read(tikNetDeviceServiceProvider).registerIfLoggedIn();
+  ref.invalidate(tikNetInboxProvider);
 }
 
 Future<void> performTikNetLogin({

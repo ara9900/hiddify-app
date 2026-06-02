@@ -151,6 +151,9 @@ abstract class Preferences {
   static final tikNetCachedAnnouncement = PreferencesNotifier.create<String, String>("tiknet_cached_announcement", "");
   /// TikNet: selected server — "personal" or catalog server id
   static final tikNetSelectedServer = PreferencesNotifier.create<String, String>("tiknet_selected_server", "personal");
+
+  /// TikNet: stable device UUID for panel device registry
+  static final tikNetDeviceId = PreferencesNotifier.create<String, String>("tiknet_device_id", "");
 }
 
 @Riverpod(keepAlive: true)

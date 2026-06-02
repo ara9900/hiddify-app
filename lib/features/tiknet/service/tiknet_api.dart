@@ -1,8 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_brand.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_faq.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_notification.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-
 /// Thrown when panel returns 4xx/5xx with optional [detail] from response body.
 class TikNetApiException implements Exception {
   TikNetApiException(this.message, {this.statusCode});
@@ -194,6 +194,60 @@ class TikNetApi {
         .map((e) => TikNetCustomerOrder.fromJson(Map<String, dynamic>.from(e)))
         .where((e) => e.id > 0)
         .toList();
+  }
+
+  /// GET /api/customer/notifications
+  Future<TikNetInbox> getNotifications({required String baseUrl, required String accessToken}) async {
+    final dio = _dio(baseUrl);
+    try {
+      final response = await dio.get<Map<String, dynamic>>(
+        '/api/customer/notifications',
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      if (response.data == null) return TikNetInbox.empty;
+      return TikNetInbox.fromJson(response.data!);
+    } catch (_) {
+      return TikNetInbox.empty;
+    }
+  }
+
+  /// POST /api/customer/notifications/{id}/read
+  Future<void> markNotificationRead({
+    required String baseUrl,
+    required String accessToken,
+    required int notificationId,
+  }) async {
+    final dio = _dio(baseUrl);
+    await dio.post<void>(
+      '/api/customer/notifications/$notificationId/read',
+      options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
+  }
+
+  /// POST /api/customer/device/register
+  Future<void> registerDevice({
+    required String baseUrl,
+    required String accessToken,
+    required String deviceId,
+    String platform = 'android',
+    String deviceModel = '',
+    String appVersion = '',
+    int? versionCode,
+    int? androidSdk,
+  }) async {
+    final dio = _dio(baseUrl);
+    await dio.post<void>(
+      '/api/customer/device/register',
+      data: {
+        'device_id': deviceId,
+        'platform': platform,
+        'device_model': deviceModel,
+        'app_version': appVersion,
+        if (versionCode != null) 'version_code': versionCode,
+        if (androidSdk != null) 'android_sdk': androidSdk,
+      },
+      options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
   }
 
   /// GET /api/customer/subscription/config - returns raw bytes
