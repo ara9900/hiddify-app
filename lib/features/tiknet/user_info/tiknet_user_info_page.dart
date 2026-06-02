@@ -10,6 +10,7 @@ import 'package:hiddify/features/tiknet/user_info/tiknet_logout_dialog.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_notification_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -190,6 +191,22 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
             },
             icon: const Icon(Icons.help_outline_rounded),
             label: const Text('راهنما و سوالات'),
+            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+          ),
+          const Gap(12),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await ref.read(tikNetTelemetryServiceProvider).reportUserIssue(
+                message: 'manual_report_from_account',
+                context: 'user_info_page',
+              );
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('گزارش خطا به پنل ارسال شد. از بخش Telemetry ادمین قابل مشاهده است.')),
+              );
+            },
+            icon: const Icon(Icons.bug_report_outlined),
+            label: const Text('ارسال گزارش خطا به پنل'),
             style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
           ),
           if (profile?.brand?.supportTelegram?.isNotEmpty == true) ...[

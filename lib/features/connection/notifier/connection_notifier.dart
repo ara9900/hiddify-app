@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:hiddify/core/haptic/haptic_service.dart';
 import 'package:hiddify/core/localization/translations.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/data/connection_data_providers.dart';
@@ -10,6 +11,8 @@ import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
+import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -142,6 +145,10 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       loggy.info("no active profile, not connecting");
       return;
     }
+    if (tikNetMode && Platform.isAndroid) {
+      await ref.read(hiddifyCoreServiceProvider).stop().run();
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+    }
     await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
       ConnectionFailure err,
     ) async {
@@ -151,6 +158,13 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           .read(dialogNotifierProvider.notifier)
           .showCustomAlertFromErr(err.present(ref.read(translationsProvider).requireValue));
       loggy.warning(err);
+      if (tikNetMode) {
+        ref.read(tikNetTelemetryServiceProvider).reportConnectionError(err, stage: 'connect');
+        final msg = err.toString();
+        if (msg.contains('starting background core') || msg.contains('startService')) {
+          ref.read(tikNetTelemetryServiceProvider).reportVpnCoreStartFailed(message: msg);
+        }
+      }
       if (!blockHiddifyRemoteServices && err.toString().contains("panic")) {
         await Sentry.captureException(Exception(err.toString()));
       }

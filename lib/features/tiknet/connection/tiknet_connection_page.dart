@@ -83,8 +83,11 @@ class TikNetConnectionPage extends HookConsumerWidget {
       final wasConnected = prev?.valueOrNull is Connected;
       if (next case AsyncData(value: Connected()) when !wasConnected) {
         ref.read(tikNetTelemetryServiceProvider).send('connect_success');
-      } else if (next case AsyncError() when prev is! AsyncError) {
-        ref.read(tikNetTelemetryServiceProvider).send('connect_fail');
+      } else if (next case AsyncError(:final error) when prev is! AsyncError) {
+        ref.read(tikNetTelemetryServiceProvider).send(
+          'connect_fail',
+          payload: {'error': error.toString()},
+        );
       }
     });
 

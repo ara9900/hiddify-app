@@ -102,7 +102,21 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
 
   @override
   Future<CoreStatus> setupBackground(String path, String name) async {
-    // if (!await waitUntilPort(portBack, false, stop)) return const CoreStatus.stopped(alert: CoreAlert.createService);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final result = await _setupBackgroundOnce(path, name);
+      if (result == const CoreStarted()) return result;
+      if (result case CoreStopped(alert: CoreAlert.startService)) {
+        loggy.warning("background core port not ready (attempt ${attempt + 1}), resetting…");
+        await stop();
+        await Future.delayed(const Duration(milliseconds: 600));
+        continue;
+      }
+      return result;
+    }
+    return const CoreStatus.stopped(alert: CoreAlert.startService, message: "starting background core...");
+  }
+
+  Future<CoreStatus> _setupBackgroundOnce(String path, String name) async {
     if (!await stop()) return const CoreStatus.stopped(alert: CoreAlert.createService);
     _status.clean();
     await methodChannel.invokeMethod("start", {
@@ -115,7 +129,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
 
     _isBgClientAvailable = true;
     loggy.info("Waiting for starting core");
-    for (var i = 0; i < 20; i++) {
+    for (var i = 0; i < 25; i++) {
       try {
         final res = await _status.get(timeout: const Duration(seconds: 1));
 
@@ -128,7 +142,6 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
             }
 
           case CoreStopping():
-          // return res;
           case CoreStarting():
         }
         await Future.delayed(const Duration(milliseconds: 200));
@@ -138,7 +151,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
     }
     loggy.info("Waiting for starting core finished");
 
-    if (!await waitUntilPort(portBack, true, null, maxTry: 10)) {
+    if (!await waitUntilPort(portBack, true, null, maxTry: 20)) {
       await stopMethodChannel();
       return const CoreStatus.stopped(alert: CoreAlert.startService, message: "starting background core...");
     }

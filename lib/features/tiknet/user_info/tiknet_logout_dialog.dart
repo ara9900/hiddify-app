@@ -47,8 +47,8 @@ Future<void> showTikNetLogoutDialog(BuildContext parentContext, WidgetRef ref) a
                   onPressed: () async {
                     Navigator.of(dialogContext).pop();
                     await ref.read(authServiceProvider).logout();
-                    if (context.mounted) {
-                      context.go('/login');
+                    if (parentContext.mounted) {
+                      parentContext.go('/login');
                     }
                   },
                   style: TextButton.styleFrom(foregroundColor: TikNetColors.error),
