@@ -1,5 +1,51 @@
 import 'package:flutter/material.dart';
 
+/// Client-side reachability from the user's device (ISP / region).
+enum TikNetClientPingState {
+  measuring,
+  noTarget,
+  reachable,
+  unreachable,
+}
+
+class TikNetClientPingResult {
+  const TikNetClientPingResult({
+    required this.state,
+    this.pingMs,
+  });
+
+  final TikNetClientPingState state;
+  final int? pingMs;
+
+  bool get reachable => state == TikNetClientPingState.reachable;
+
+  String get pingLabel {
+    return switch (state) {
+      TikNetClientPingState.measuring => '…',
+      TikNetClientPingState.noTarget => '—',
+      TikNetClientPingState.reachable when pingMs != null && pingMs! > 0 => '$pingMs ms',
+      TikNetClientPingState.reachable => 'در دسترس',
+      TikNetClientPingState.unreachable => 'فیلتر/قطع',
+    };
+  }
+
+  Color get pingColor {
+    return switch (state) {
+      TikNetClientPingState.measuring => const Color(0xFF9E9E9E),
+      TikNetClientPingState.noTarget => const Color(0xFF9E9E9E),
+      TikNetClientPingState.unreachable => const Color(0xFFEF4444),
+      TikNetClientPingState.reachable => _latencyColor(pingMs ?? 0),
+    };
+  }
+
+  static Color _latencyColor(int ms) {
+    if (ms <= 0) return const Color(0xFF22C55E);
+    if (ms <= 120) return const Color(0xFF22C55E);
+    if (ms <= 250) return const Color(0xFFEAB308);
+    return const Color(0xFFF97316);
+  }
+}
+
 /// Catalog server entry from panel GET /api/customer/servers
 class TikNetServerEntry {
   const TikNetServerEntry({
@@ -11,8 +57,9 @@ class TikNetServerEntry {
     required this.requiresPaid,
     required this.accessible,
     required this.sortOrder,
-    this.healthStatus,
-    this.latencyMs,
+    this.probeUrl = '',
+    this.clientPingState = TikNetClientPingState.measuring,
+    this.clientPingMs,
   });
 
   final int id;
@@ -23,8 +70,9 @@ class TikNetServerEntry {
   final bool requiresPaid;
   final bool accessible;
   final int sortOrder;
-  final String? healthStatus;
-  final int? latencyMs;
+  final String probeUrl;
+  final TikNetClientPingState clientPingState;
+  final int? clientPingMs;
 
   factory TikNetServerEntry.fromJson(Map<String, dynamic> json) {
     return TikNetServerEntry(
@@ -36,30 +84,56 @@ class TikNetServerEntry {
       requiresPaid: json['requires_paid'] as bool? ?? false,
       accessible: json['accessible'] as bool? ?? true,
       sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
-      healthStatus: json['health_status'] as String?,
-      latencyMs: (json['latency_ms'] as num?)?.toInt(),
+      probeUrl: (json['probe_url'] as String?)?.trim() ?? '',
     );
   }
 
-  bool get isHealthDown => healthStatus == 'down';
-
-  bool get hasPing => latencyMs != null && latencyMs! > 0;
-
-  String get pingLabel {
-    if (hasPing) return '${latencyMs} ms';
-    return switch (healthStatus) {
-      'up' => 'آنلاین',
-      'down' => 'آفلاین',
-      'unknown' => '—',
-      _ => '—',
-    };
+  TikNetServerEntry copyWithClientPing({
+    required TikNetClientPingState state,
+    int? pingMs,
+  }) {
+    return TikNetServerEntry(
+      id: id,
+      name: name,
+      countryCode: countryCode,
+      tier: tier,
+      sourceType: sourceType,
+      requiresPaid: requiresPaid,
+      accessible: accessible,
+      sortOrder: sortOrder,
+      probeUrl: probeUrl,
+      clientPingState: state,
+      clientPingMs: pingMs,
+    );
   }
 
-  /// Green / yellow / red / grey for ping chip.
+  bool get isUnreachableFromDevice => clientPingState == TikNetClientPingState.unreachable;
+
+  bool get hasClientPing => clientPingState == TikNetClientPingState.reachable &&
+      clientPingMs != null &&
+      clientPingMs! > 0;
+
+  String get pingLabel {
+    if (clientPingState == TikNetClientPingState.measuring) return '…';
+    if (clientPingState == TikNetClientPingState.noTarget) return '—';
+    if (clientPingState == TikNetClientPingState.unreachable) return 'فیلتر/قطع';
+    if (hasClientPing) return '$clientPingMs ms';
+    if (clientPingState == TikNetClientPingState.reachable) return 'در دسترس';
+    return '—';
+  }
+
   Color get pingColor {
-    if (isHealthDown) return const Color(0xFFEF4444);
-    if (!hasPing) return const Color(0xFF9E9E9E);
-    final ms = latencyMs!;
+    if (clientPingState == TikNetClientPingState.measuring) {
+      return const Color(0xFF9E9E9E);
+    }
+    if (clientPingState == TikNetClientPingState.noTarget) {
+      return const Color(0xFF9E9E9E);
+    }
+    if (clientPingState == TikNetClientPingState.unreachable) {
+      return const Color(0xFFEF4444);
+    }
+    final ms = clientPingMs ?? 0;
+    if (ms <= 0) return const Color(0xFF22C55E);
     if (ms <= 120) return const Color(0xFF22C55E);
     if (ms <= 250) return const Color(0xFFEAB308);
     return const Color(0xFFF97316);
@@ -90,10 +164,12 @@ class TikNetServerCatalog {
   const TikNetServerCatalog({
     required this.personalAvailable,
     required this.servers,
+    this.personalPing,
   });
 
   final bool personalAvailable;
   final List<TikNetServerEntry> servers;
+  final TikNetClientPingResult? personalPing;
 
   factory TikNetServerCatalog.fromJson(Map<String, dynamic> json) {
     final list = json['servers'];
@@ -119,32 +195,6 @@ class TikNetServerCatalog {
     }
     return map;
   }
-
-  TikNetServerCatalog mergeHealth(List<Map<String, dynamic>> healthRows) {
-    if (healthRows.isEmpty) return this;
-    final byId = <int, Map<String, dynamic>>{};
-    for (final row in healthRows) {
-      final id = (row['id'] as num?)?.toInt();
-      if (id != null) byId[id] = row;
-    }
-    final merged = servers.map((s) {
-      final h = byId[s.id];
-      if (h == null) return s;
-      return TikNetServerEntry(
-        id: s.id,
-        name: s.name,
-        countryCode: s.countryCode,
-        tier: s.tier,
-        sourceType: s.sourceType,
-        requiresPaid: s.requiresPaid,
-        accessible: s.accessible,
-        sortOrder: s.sortOrder,
-        healthStatus: (h['health_status'] as String?) ?? s.healthStatus,
-        latencyMs: (h['latency_ms'] as num?)?.toInt() ?? s.latencyMs,
-      );
-    }).toList();
-    return TikNetServerCatalog(personalAvailable: personalAvailable, servers: merged);
-  }
 }
 
 /// Resolved label for current server selection.
@@ -156,7 +206,7 @@ class TikNetSelectedServerInfo {
     this.personal = false,
     this.pingLabel,
     this.pingColor,
-    this.isHealthDown = false,
+    this.isUnreachableFromDevice = false,
   });
 
   final String title;
@@ -165,7 +215,7 @@ class TikNetSelectedServerInfo {
   final bool personal;
   final String? pingLabel;
   final Color? pingColor;
-  final bool isHealthDown;
+  final bool isUnreachableFromDevice;
 }
 
 TikNetSelectedServerInfo resolveSelectedServerInfo({
@@ -173,10 +223,14 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
   TikNetServerCatalog? catalog,
 }) {
   if (selected.isPersonal || selected.catalogId == null) {
-    return const TikNetSelectedServerInfo(
+    final personal = catalog?.personalPing;
+    return TikNetSelectedServerInfo(
       title: 'اشتراک من',
       subtitle: 'کانفیگ اختصاصی حساب شما',
       personal: true,
+      pingLabel: personal?.pingLabel,
+      pingColor: personal?.pingColor,
+      isUnreachableFromDevice: personal?.state == TikNetClientPingState.unreachable,
     );
   }
   TikNetServerEntry? match;
@@ -194,7 +248,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
       countryCode: match.countryCode,
       pingLabel: match.pingLabel,
       pingColor: match.pingColor,
-      isHealthDown: match.isHealthDown,
+      isUnreachableFromDevice: match.isUnreachableFromDevice,
     );
   }
   return TikNetSelectedServerInfo(

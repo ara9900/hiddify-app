@@ -121,7 +121,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                           locked: !s.accessible,
                           pingLabel: s.pingLabel,
                           pingColor: s.pingColor,
-                          isHealthDown: s.isHealthDown,
+                          isUnreachableFromDevice: s.isUnreachableFromDevice,
                           onTap: s.accessible
                               ? () => _select(context, ref, sync, (isPersonal: false, catalogId: s.id))
                               : null,
@@ -201,7 +201,7 @@ class _ServerRow extends StatelessWidget {
     this.locked = false,
     this.pingLabel,
     this.pingColor,
-    this.isHealthDown = false,
+    this.isUnreachableFromDevice = false,
     this.onTap,
   });
 
@@ -214,7 +214,7 @@ class _ServerRow extends StatelessWidget {
   final bool locked;
   final String? pingLabel;
   final Color? pingColor;
-  final bool isHealthDown;
+  final bool isUnreachableFromDevice;
   final VoidCallback? onTap;
 
   @override
@@ -270,7 +270,7 @@ class _ServerRow extends StatelessWidget {
                   ],
                   if (selected)
                     const Icon(Icons.check_circle_rounded, color: TikNetColors.primary, size: 22)
-                  else if (isHealthDown)
+                  else if (isUnreachableFromDevice)
                     Icon(Icons.cloud_off_rounded, color: TikNetColors.error.withValues(alpha: 0.8), size: 20),
                 ],
               ),
@@ -329,9 +329,9 @@ class TikNetServerSelectorCard extends ConsumerWidget {
                           ),
                           const Spacer(),
                           if (vpnConnected)
-                            _MiniStatusPill(label: 'VPN روشن', color: TikNetColors.connected)
+                            const _MiniStatusPill(label: 'VPN روشن', color: TikNetColors.connected)
                           else
-                            _MiniStatusPill(label: 'VPN خاموش', color: TikNetColors.disconnected),
+                            const _MiniStatusPill(label: 'VPN خاموش', color: TikNetColors.disconnected),
                         ],
                       ),
                       const Gap(6),
