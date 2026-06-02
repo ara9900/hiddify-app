@@ -327,7 +327,7 @@ class _RenewButton extends ConsumerWidget {
       future: _loadOrders(ref),
       builder: (context, snapshot) {
         TikNetCustomerOrder? withUrl;
-        for (final o in snapshot.data ?? const []) {
+        for (final o in snapshot.data ?? const <TikNetCustomerOrder>[]) {
           if (o.renewUrl != null && o.renewUrl!.isNotEmpty) {
             withUrl = o;
             break;

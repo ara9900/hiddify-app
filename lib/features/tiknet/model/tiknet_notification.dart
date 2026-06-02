@@ -49,5 +49,5 @@ class TikNetInbox {
     );
   }
 
-  static const empty = TikNetInbox(notifications: [], unreadCount: 0);
+  static final empty = TikNetInbox(notifications: const [], unreadCount: 0);
 }
