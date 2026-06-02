@@ -13,6 +13,7 @@ import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_network_defaults.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
@@ -41,6 +42,13 @@ class TikNetConnectionPage extends HookConsumerWidget {
       return exp != null && DateTime.now().isAfter(exp);
     }();
     final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider)?.expireDate;
+
+    useEffect(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ensureTikNetDnsFromProfile(ref);
+      });
+      return null;
+    }, const []);
 
     useEffect(() {
       if (subscriptionExpired && ref.read(connectionNotifierProvider).valueOrNull is Connected) {
@@ -138,6 +146,13 @@ class TikNetConnectionPage extends HookConsumerWidget {
                             requiresReconnect: requiresReconnect,
                             enabled: enabled && !subscriptionExpired,
                             onTap: () async {
+                              final dnsFixed = await ensureTikNetDnsFromProfile(ref);
+                              if (dnsFixed && ref.read(connectionNotifierProvider).valueOrNull is Connected) {
+                                await ref.read(connectionNotifierProvider.notifier).reconnect(
+                                  ref.read(activeProfileProvider).valueOrNull,
+                                );
+                                return;
+                              }
                               if (ref.read(activeProfileProvider).valueOrNull == null) {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(

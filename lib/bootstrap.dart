@@ -75,7 +75,10 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
   });
 
   if (tikNetMode) {
-    await _init("tiknet network defaults", () => applyTikNetNetworkDefaults(container));
+    await _init("tiknet network defaults", () async {
+      await applyTikNetNetworkDefaults(container);
+      await ensureTikNetDnsFromProfile(container);
+    });
     await _init("tiknet session", () => reconcileTikNetSession(container));
   }
 

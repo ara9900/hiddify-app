@@ -12,7 +12,6 @@ import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
-import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -144,10 +143,6 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (activeProfile == null) {
       loggy.info("no active profile, not connecting");
       return;
-    }
-    if (tikNetMode && Platform.isAndroid) {
-      await ref.read(hiddifyCoreServiceProvider).stop().run();
-      await Future<void>.delayed(const Duration(milliseconds: 350));
     }
     await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
       ConnectionFailure err,
