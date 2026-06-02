@@ -6,6 +6,7 @@ import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/tiknet/help/tiknet_faq_page.dart';
 import 'package:hiddify/features/tiknet/inbox/tiknet_notifications_page.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
+import 'package:hiddify/features/tiknet/user_info/tiknet_logout_dialog.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_notification_service.dart';
@@ -207,10 +208,7 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
           _RenewButton(profile: profile),
           const Gap(12),
           OutlinedButton.icon(
-            onPressed: () async {
-              await auth.logout();
-              if (context.mounted) context.go('/login');
-            },
+            onPressed: () => showTikNetLogoutDialog(context, ref),
             icon: const Icon(Icons.logout_rounded),
             label: const Text('خروج'),
             style: OutlinedButton.styleFrom(
