@@ -92,11 +92,12 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
     }
   }
 
-  if (catalog != null && catalog.nodes.isNotEmpty && profileId.isEmpty) {
+  final resolved = catalog;
+  if (resolved != null && resolved.nodes.isNotEmpty && profileId.isEmpty) {
     hint = 'برای انتخاب هر سرور، یک‌بار «بروزرسانی» در حساب من بزنید.';
   }
 
-  if (catalog == null || catalog.isEmpty) {
+  if (resolved == null || resolved.isEmpty) {
     return TikNetPersonalNodesState(
       catalog: null,
       nodePings: const {},
@@ -105,6 +106,6 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
   }
 
   final ping = ref.read(tikNetClientPingServiceProvider);
-  final pings = await ping.measureNodePings(catalog.nodes);
-  return TikNetPersonalNodesState(catalog: catalog, nodePings: pings, parseHint: hint);
+  final pings = await ping.measureNodePings(resolved.nodes);
+  return TikNetPersonalNodesState(catalog: resolved, nodePings: pings, parseHint: hint);
 });
