@@ -134,6 +134,11 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromSubscriptionLinks(Strin
   );
 }
 
+/// sing-box uses [type]; Xray / some Hiddify exports use [protocol].
+String _outboundType(Map<String, dynamic> o) {
+  return ((o['type'] ?? o['protocol']) as String?)?.toLowerCase() ?? '';
+}
+
 String _safeTag(String name, int index) {
   final t = name.replaceAll(RegExp(r'[^\w\-\.\u0600-\u06FF]+'), '_').trim();
   if (t.isNotEmpty && t.length <= 64) return t;
@@ -162,8 +167,14 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
   try {
     final decoded = jsonDecode(trimmed);
     if (decoded is! Map<String, dynamic>) return null;
-    final outboundsRaw = decoded['outbounds'];
-    if (outboundsRaw is! List) return null;
+    var outboundsRaw = decoded['outbounds'];
+    if (outboundsRaw is! List) {
+      final clashProxies = decoded['proxies'];
+      if (clashProxies is List) {
+        return _catalogFromClashProxies(decoded, clashProxies);
+      }
+      return null;
+    }
 
     final outbounds = <Map<String, dynamic>>[];
     for (final o in outboundsRaw) {
@@ -182,7 +193,7 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
     }
 
     for (final o in outbounds) {
-      final type = (o['type'] as String?)?.toLowerCase() ?? '';
+      final type = _outboundType(o);
       final tag = (o['tag'] as String?)?.trim() ?? '';
       if (tag.isEmpty) continue;
 
@@ -247,7 +258,7 @@ void _appendNodesFromOutboundRefs(
   const refTypes = {'selector', 'urltest', 'balancer'};
 
   for (final o in outbounds) {
-    final type = (o['type'] as String?)?.toLowerCase() ?? '';
+    final type = _outboundType(o);
     if (!refTypes.contains(type)) continue;
     final refs = o['outbounds'];
     if (refs is! List) continue;
@@ -259,7 +270,7 @@ void _appendNodesFromOutboundRefs(
       if (tag == 'direct' || tag == 'block' || tag == 'dns' || tag == 'auto') continue;
 
       final def = byTag[tag];
-      final defType = (def?['type'] as String?)?.toLowerCase() ?? '';
+      final defType = def != null ? _outboundType(def) : '';
       if (def != null && !_skipTypes.contains(defType) && defType != 'selector') {
         seen.add(tag);
         nodes.add(
@@ -285,6 +296,55 @@ void _appendNodesFromOutboundRefs(
   }
 }
 
+TikNetPersonalOutboundCatalog? _catalogFromClashProxies(
+  Map<String, dynamic> config,
+  List clashProxies,
+) {
+  final nodes = <TikNetPersonalProxyNode>[];
+  for (var i = 0; i < clashProxies.length; i++) {
+    final p = clashProxies[i];
+    if (p is! Map) continue;
+    final map = Map<String, dynamic>.from(p);
+    final type = _outboundType(map);
+    if (type.isEmpty || _skipTypes.contains(type)) continue;
+    final name = (map['name'] as String?)?.trim();
+    final tag = name?.isNotEmpty == true ? _safeTag(name!, i) : 'node-$i';
+    nodes.add(
+      TikNetPersonalProxyNode(
+        tag: tag,
+        groupTag: 'proxy',
+        label: name?.isNotEmpty == true ? name! : tag,
+        probeUrl: _probeUrlFromOutbound(map),
+      ),
+    );
+  }
+  if (nodes.isEmpty) return null;
+  var mainGroup = 'proxy';
+  final groups = config['proxy-groups'] ?? config['proxy_groups'];
+  if (groups is List) {
+    for (final g in groups) {
+      if (g is! Map) continue;
+      final gType = (g['type'] as String?)?.toLowerCase() ?? '';
+      if (gType == 'url-test' || gType == 'urltest') {
+        return TikNetPersonalOutboundCatalog(
+          mainGroupTag: (g['name'] as String?)?.trim() ?? mainGroup,
+          autoModes: [
+            TikNetPersonalAutoMode(
+              kind: TikNetPersonalPickKind.urltest,
+              tag: (g['name'] as String?)?.trim() ?? 'auto',
+              groupTag: mainGroup,
+              title: 'کمترین تأخیر',
+              subtitle: 'خودکار؛ سریع‌ترین سرور بر اساس پینگ',
+            ),
+          ],
+          nodes: nodes,
+        );
+      }
+    }
+  }
+  return TikNetPersonalOutboundCatalog(mainGroupTag: mainGroup, autoModes: const [], nodes: nodes);
+}
+
 String _resolveMainSelectorTag(Map<String, dynamic> config, List<Map<String, dynamic>> outbounds) {
   final route = config['route'];
   if (route is Map<String, dynamic>) {
@@ -295,7 +355,7 @@ String _resolveMainSelectorTag(Map<String, dynamic> config, List<Map<String, dyn
   Map<String, dynamic>? best;
   var bestLen = -1;
   for (final o in outbounds) {
-    if ((o['type'] as String?)?.toLowerCase() != 'selector') continue;
+    if (_outboundType(o) != 'selector') continue;
     final outs = o['outbounds'];
     final len = outs is List ? outs.length : 0;
     if (len > bestLen) {
@@ -322,6 +382,7 @@ String _probeUrlFromOutbound(Map<String, dynamic> o) {
   }
 
   addHost(o['server'] as String?);
+  addHost(o['address'] as String?);
   final tls = o['tls'];
   if (tls is Map) addHost(tls['server'] as String?);
   final reality = o['reality'];
