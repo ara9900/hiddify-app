@@ -47,8 +47,8 @@ void main() {
 
   test('normalizeSubscriptionFetchUrl appends singbox for Hiddify user page', () {
     expect(
-      normalizeSubscriptionFetchUrl('https://sub.example/abc-def12-3456-7890-abcdef123456/'),
-      'https://sub.example/abc-def12-3456-7890-abcdef123456/singbox/',
+      normalizeSubscriptionFetchUrl('https://sub.example/12345678-1234-1234-1234-123456789abc/'),
+      'https://sub.example/12345678-1234-1234-1234-123456789abc/singbox/',
     );
     expect(
       normalizeSubscriptionFetchUrl('https://sub.example/uuid/singbox/'),
