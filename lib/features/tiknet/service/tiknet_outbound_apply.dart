@@ -5,10 +5,8 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
-
 /// After profile load / connect, apply personal urltest/balancer/proxy pick via core API.
-Future<void> applyTikNetPersonalOutboundSelection(Ref ref) async {
+Future<void> applyTikNetPersonalOutboundSelection(dynamic ref) async {
   final selection = parseServerSelection(ref.read(Preferences.tikNetSelectedServer));
   if (!selectionNeedsOutboundApply(selection)) return;
 
