@@ -60,10 +60,8 @@ void main() {
     );
   });
 
-  test('shouldFetchSubscriptionOnDevice when only urltest modes exist without nodes', () {
-    const raw = '''
-{"outbounds":[{"type":"urltest","tag":"auto","outbounds":["DE"]}]}
-''';
+  test('shouldFetchSubscriptionOnDevice when panel JSON has no proxy nodes', () {
+    const raw = '{"outbounds":[{"type":"selector","tag":"proxy","outbounds":[]}]}';
     expect(shouldFetchSubscriptionOnDevice(raw, 'https://sub.example/uuid/'), isTrue);
   });
 
