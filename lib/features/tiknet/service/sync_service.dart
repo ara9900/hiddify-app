@@ -10,6 +10,7 @@ import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_path_resolver.dart';
 import 'package:hiddify/features/profile/data/profile_repository.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -148,22 +149,57 @@ class SyncService {
   }
 
   Future<bool> _applyProfileContent(String content) async {
+    final subUrl = normalizeSubscriptionFetchUrl(_ref.read(Preferences.tikNetSubscriptionUrl));
+    if (shouldFetchSubscriptionOnDevice(content, subUrl)) {
+      return _applyRemoteSubscriptionProfile(subUrl);
+    }
+    return _applyLocalProfileContent(content);
+  }
+
+  Future<bool> _applyRemoteSubscriptionProfile(String subUrl) async {
+    final repo = await _ref.read(profileRepositoryProvider.future);
+    final userOverride = UserOverride(name: tikNetProfileDisplayName);
+    await _abortVpnIfNeeded();
+
+    var existing = await _findTikNetProfile(repo);
+    if (existing != null && existing is! RemoteProfileEntity) {
+      await repo.deleteById(existing.id, existing.active).run();
+      existing = null;
+      await _ref.read(Preferences.tikNetProfileId.notifier).update('');
+    }
+
+    if (existing != null && existing is RemoteProfileEntity && existing.url.trim() != subUrl.trim()) {
+      await repo.deleteById(existing.id, existing.active).run();
+      existing = null;
+      await _ref.read(Preferences.tikNetProfileId.notifier).update('');
+    }
+
+    final result = await repo.upsertRemote(subUrl, userOverride: userOverride).run();
+    if (result.isLeft()) return false;
+
+    final profile = await _findTikNetProfile(repo);
+    final profileId = profile?.id;
+    if (profileId == null || profileId.isEmpty) return false;
+
+    await _ref.read(Preferences.tikNetProfileId.notifier).update(profileId);
+    await repo.setAsActive(profileId).run();
+    _ref.invalidate(personalOutboundProvider);
+    await applyTikNetPersonalOutboundSelection(_ref);
+    return true;
+  }
+
+  Future<bool> _applyLocalProfileContent(String content) async {
     final repo = await _ref.read(profileRepositoryProvider.future);
     final pathResolver = _ref.read(profilePathResolverProvider);
     final userOverride = UserOverride(name: tikNetProfileDisplayName);
-    final connection = _ref.read(connectionNotifierProvider).valueOrNull;
-
-    // Never rewrite profile while VPN is up — avoids tun/core deadlock and phone-wide freeze.
-    if (connection is Connected || connection is Connecting || connection is Disconnecting) {
-      await _ref.read(connectionNotifierProvider.notifier).abortConnection();
-      await _ref.read(Preferences.startedByUser.notifier).update(false);
-    }
+    await _abortVpnIfNeeded();
 
     var existing = await _findTikNetProfile(repo);
 
     if (existing != null && _profileContentMatches(existing.id, content, pathResolver)) {
       await _ref.read(Preferences.tikNetProfileId.notifier).update(existing.id);
       await repo.setAsActive(existing.id).run();
+      _ref.invalidate(personalOutboundProvider);
       return true;
     }
 
@@ -189,8 +225,17 @@ class SyncService {
 
     await _ref.read(Preferences.tikNetProfileId.notifier).update(profileId);
     await repo.setAsActive(profileId).run();
+    _ref.invalidate(personalOutboundProvider);
     await applyTikNetPersonalOutboundSelection(_ref);
     return true;
+  }
+
+  Future<void> _abortVpnIfNeeded() async {
+    final connection = _ref.read(connectionNotifierProvider).valueOrNull;
+    if (connection is Connected || connection is Connecting || connection is Disconnecting) {
+      await _ref.read(connectionNotifierProvider.notifier).abortConnection();
+      await _ref.read(Preferences.startedByUser.notifier).update(false);
+    }
   }
 
   bool _profileContentMatches(String profileId, String content, ProfilePathResolver pathResolver) {

@@ -31,13 +31,6 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
   }
 
   final candidates = <String>[];
-  final rawB64 = ref.read(Preferences.tikNetCachedConfig);
-  if (rawB64.isNotEmpty) {
-    try {
-      final decoded = utf8.decode(base64Decode(rawB64));
-      if (decoded.trim().isNotEmpty) candidates.add(decoded);
-    } catch (_) {}
-  }
 
   if (profileId.isNotEmpty) {
     try {
@@ -50,6 +43,14 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
       generated.fold((_) {}, (c) {
         if (c.trim().isNotEmpty) candidates.add(c);
       });
+    } catch (_) {}
+  }
+
+  final rawB64 = ref.read(Preferences.tikNetCachedConfig);
+  if (rawB64.isNotEmpty) {
+    try {
+      final decoded = utf8.decode(base64Decode(rawB64));
+      if (decoded.trim().isNotEmpty) candidates.add(decoded);
     } catch (_) {}
   }
 

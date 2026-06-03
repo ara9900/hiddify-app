@@ -88,6 +88,35 @@ const _proxyUriSchemes = {
   'warp',
 };
 
+/// True when panel bytes do not list nodes but we have an HTTP subscription URL —
+/// import should use [ProfileRepository.upsertRemote] so the phone fetches like Hiddify app.
+bool shouldFetchSubscriptionOnDevice(String panelContent, String subscriptionUrl) {
+  final url = subscriptionUrl.trim();
+  if (!url.toLowerCase().startsWith('http')) return false;
+  final trimmed = panelContent.trim();
+  if (trimmed.isEmpty) return true;
+  var catalog = parsePersonalOutboundsFromConfig(trimmed);
+  if (catalog == null || catalog.isEmpty) {
+    catalog = parsePersonalOutboundsFromSubscriptionLinks(trimmed);
+  }
+  return catalog == null || catalog.isEmpty;
+}
+
+/// Hiddify user page URLs need /singbox/ (or /sub/) for raw config download on device.
+String normalizeSubscriptionFetchUrl(String rawUrl) {
+  var url = rawUrl.trim();
+  if (url.isEmpty || !url.toLowerCase().startsWith('http')) return url;
+  final lower = url.toLowerCase();
+  if (lower.contains('/singbox') || lower.contains('/sub/') || lower.contains('/xray/')) {
+    return url;
+  }
+  if (RegExp(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', caseSensitive: false).hasMatch(url) &&
+      url.endsWith('/')) {
+    return '${url}singbox/';
+  }
+  return url;
+}
+
 /// Pasargad / Hiddify subscription: base64 or plain lines of proxy URIs.
 TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromSubscriptionLinks(String rawContent) {
   var text = rawContent.trim();

@@ -20,6 +20,7 @@ import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_network_defaults.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
+import 'package:hiddify/features/tiknet/widgets/tiknet_app_version_label.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
 import 'package:hiddify/utils/number_formatters.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
@@ -114,6 +115,12 @@ class TikNetConnectionPage extends HookConsumerWidget {
       appBar: AppBar(
         title: const Text('اتصال امن'),
         centerTitle: true,
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(left: 16),
+            child: Center(child: TikNetAppVersionLabel(compact: true)),
+          ),
+        ],
       ),
       body: SafeArea(
         child: RefreshIndicator(

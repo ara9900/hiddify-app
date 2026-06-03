@@ -35,6 +35,27 @@ void main() {
     expect(catalog!.nodes.length, 2);
   });
 
+  test('shouldFetchSubscriptionOnDevice when panel bytes have no nodes but URL is http', () {
+    expect(shouldFetchSubscriptionOnDevice('', 'https://panel.example/sub/uuid/'), isTrue);
+    expect(shouldFetchSubscriptionOnDevice('not-json', 'https://panel.example/sub/uuid/'), isTrue);
+    const singbox = '''
+{"outbounds":[{"type":"vless","tag":"DE","server":"de.example.com"}]}
+''';
+    expect(shouldFetchSubscriptionOnDevice(singbox, 'https://panel.example/sub/uuid/'), isFalse);
+    expect(shouldFetchSubscriptionOnDevice(singbox, ''), isFalse);
+  });
+
+  test('normalizeSubscriptionFetchUrl appends singbox for Hiddify user page', () {
+    expect(
+      normalizeSubscriptionFetchUrl('https://sub.example/abc-def12-3456-7890-abcdef123456/'),
+      'https://sub.example/abc-def12-3456-7890-abcdef123456/singbox/',
+    );
+    expect(
+      normalizeSubscriptionFetchUrl('https://sub.example/uuid/singbox/'),
+      'https://sub.example/uuid/singbox/',
+    );
+  });
+
   test('parsePersonalOutboundsFromSubscriptionLinks reads base64 vless lines', () {
     const link = 'vless://uuid@host:443?security=tls#Germany';
     final b64 = 'dmxlc3M6Ly91dWlkQGhvc3Q6NDQzP3NlY3VyaXR5PXRscyNHZXJtYW55';

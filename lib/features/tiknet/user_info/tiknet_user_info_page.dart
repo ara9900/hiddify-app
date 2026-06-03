@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/tiknet/help/tiknet_faq_page.dart';
@@ -53,6 +54,7 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
     }
 
     final sync = ref.read(syncServiceProvider);
+    final appVersion = ref.watch(appInfoProvider).valueOrNull?.version;
     final profile = sync.getProfile();
     final lastSync = sync.getLastSyncTime();
     final expired = profile?.isExpired ?? sync.isSubscriptionExpired();
@@ -141,6 +143,8 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
                     'آخرین بروزرسانی',
                     lastSync != null ? '${formatShamsiDate(lastSync)} ${_formatTime(lastSync)}' : '—',
                   ),
+                  const Divider(height: 24, color: TikNetColors.border),
+                  _row(theme, 'نسخه اپلیکیشن', appVersion != null ? 'نسخه $appVersion' : '—'),
                 ],
               ),
             ),
@@ -324,7 +328,11 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
             ),
           ),
           Expanded(
-            child: Text(value, style: theme.textTheme.bodyMedium),
+            child: Text(
+              value,
+              textDirection: label == 'نسخه اپلیکیشن' ? TextDirection.ltr : null,
+              style: theme.textTheme.bodyMedium,
+            ),
           ),
         ],
       ),
