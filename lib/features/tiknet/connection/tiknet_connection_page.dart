@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
@@ -12,7 +14,9 @@ import 'package:hiddify/features/tiknet/connection/tiknet_server_picker.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
+import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_network_defaults.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
@@ -34,7 +38,13 @@ class TikNetConnectionPage extends HookConsumerWidget {
 
     final selected = ref.watch(selectedServerProvider);
     final catalog = ref.watch(serverCatalogProvider).valueOrNull;
-    final serverInfo = resolveSelectedServerInfo(selected: selected, catalog: catalog);
+    final personalNodes = ref.watch(personalOutboundProvider).valueOrNull;
+    final serverInfo = resolveSelectedServerInfo(
+      selected: selected,
+      catalog: catalog,
+      personalCatalog: personalNodes?.catalog,
+      personalNodePings: personalNodes?.nodePings,
+    );
 
     final subscriptionExpired = () {
       final info = ref.watch(tikNetUserInfoProvider);
@@ -91,6 +101,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
       final wasConnected = prev?.valueOrNull is Connected;
       if (next case AsyncData(value: Connected()) when !wasConnected) {
         ref.read(tikNetTelemetryServiceProvider).send('connect_success');
+        unawaited(applyTikNetPersonalOutboundSelection(ref));
       } else if (next case AsyncError(:final error) when prev is! AsyncError) {
         ref.read(tikNetTelemetryServiceProvider).send(
           'connect_fail',
@@ -108,6 +119,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
         child: RefreshIndicator(
           onRefresh: () async {
             ref.invalidate(serverCatalogProvider);
+            ref.invalidate(personalOutboundProvider);
             await ref.read(syncServiceProvider).syncAll();
           },
           child: CustomScrollView(

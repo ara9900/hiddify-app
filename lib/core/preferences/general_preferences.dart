@@ -151,6 +151,11 @@ abstract class Preferences {
   static final tikNetCachedAnnouncement = PreferencesNotifier.create<String, String>("tiknet_cached_announcement", "");
   /// TikNet: selected server — "personal" or catalog server id
   static final tikNetSelectedServer = PreferencesNotifier.create<String, String>("tiknet_selected_server", "personal");
+  /// TikNet: panel server list mode — both | personal_only | catalog_only
+  static final tikNetServerDisplayMode = PreferencesNotifier.create<String, String>(
+    "tiknet_server_display_mode",
+    "both",
+  );
 
   /// TikNet: stable device UUID for panel device registry
   static final tikNetDeviceId = PreferencesNotifier.create<String, String>("tiknet_device_id", "");

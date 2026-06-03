@@ -1,4 +1,7 @@
+import 'package:dartx/dartx.dart';
 import 'package:flutter/material.dart';
+
+import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 
 /// Client-side reachability from the user's device (ISP / region).
 enum TikNetClientPingState {
@@ -165,16 +168,19 @@ class TikNetServerCatalog {
     required this.personalAvailable,
     required this.servers,
     this.personalPing,
+    this.displayMode = TikNetServerDisplayMode.both,
   });
 
   final bool personalAvailable;
   final List<TikNetServerEntry> servers;
   final TikNetClientPingResult? personalPing;
+  final TikNetServerDisplayMode displayMode;
 
   factory TikNetServerCatalog.fromJson(Map<String, dynamic> json) {
     final list = json['servers'];
     return TikNetServerCatalog(
       personalAvailable: json['personal_available'] as bool? ?? false,
+      displayMode: TikNetServerDisplayMode.fromApi(json['display_mode'] as String?),
       servers: list is List
           ? list
               .whereType<Map>()
@@ -184,6 +190,10 @@ class TikNetServerCatalog {
           : const [],
     );
   }
+
+  bool get showPersonal => personalAvailable && displayMode != TikNetServerDisplayMode.catalogOnly;
+
+  bool get showCatalog => displayMode != TikNetServerDisplayMode.personalOnly && servers.isNotEmpty;
 
   Map<String, List<TikNetServerEntry>> groupedByTier() {
     final map = <String, List<TikNetServerEntry>>{};
@@ -221,12 +231,41 @@ class TikNetSelectedServerInfo {
 TikNetSelectedServerInfo resolveSelectedServerInfo({
   required TikNetServerSelection selected,
   TikNetServerCatalog? catalog,
+  TikNetPersonalOutboundCatalog? personalCatalog,
+  Map<String, TikNetClientPingResult>? personalNodePings,
 }) {
-  if (selected.isPersonal || selected.catalogId == null) {
+  if (selected.isPersonal && selected.catalogId == null) {
+    if (selected.personalKind == TikNetPersonalPickKind.urltest ||
+        selected.personalKind == TikNetPersonalPickKind.balancer) {
+      final mode = personalCatalog?.autoModes
+          .where((m) => m.tag == selected.personalTag && m.kind == selected.personalKind)
+          .firstOrNull;
+      if (mode != null) {
+        return TikNetSelectedServerInfo(
+          title: mode.title,
+          subtitle: mode.subtitle,
+          personal: true,
+        );
+      }
+    }
+    if (selected.personalKind == TikNetPersonalPickKind.proxy &&
+        selected.personalTag != null &&
+        selected.personalTag!.isNotEmpty) {
+      final node = personalCatalog?.nodes.where((n) => n.tag == selected.personalTag).firstOrNull;
+      final ping = personalNodePings?[selected.personalTag!];
+      return TikNetSelectedServerInfo(
+        title: node?.label ?? selected.personalTag!,
+        subtitle: 'اشتراک اختصاصی',
+        personal: true,
+        pingLabel: ping?.pingLabel,
+        pingColor: ping?.pingColor,
+        isUnreachableFromDevice: ping?.state == TikNetClientPingState.unreachable,
+      );
+    }
     final personal = catalog?.personalPing;
     return TikNetSelectedServerInfo(
       title: 'اشتراک من',
-      subtitle: 'کانفیگ اختصاصی حساب شما',
+      subtitle: 'پیش‌فرض کانفیگ اشتراک',
       personal: true,
       pingLabel: personal?.pingLabel,
       pingColor: personal?.pingColor,
@@ -257,17 +296,111 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
   );
 }
 
-typedef TikNetServerSelection = ({bool isPersonal, int? catalogId});
+typedef TikNetServerSelection = ({
+  bool isPersonal,
+  int? catalogId,
+  TikNetPersonalPickKind personalKind,
+  String? personalTag,
+  String? personalGroupTag,
+});
+
+TikNetServerSelection personalDefaultSelection() => (
+      isPersonal: true,
+      catalogId: null,
+      personalKind: TikNetPersonalPickKind.defaultAuto,
+      personalTag: null,
+      personalGroupTag: null,
+    );
 
 TikNetServerSelection parseServerSelection(String raw) {
   final t = raw.trim();
-  if (t.isEmpty || t == 'personal') return (isPersonal: true, catalogId: null);
+  if (t.isEmpty || t == 'personal') return personalDefaultSelection();
+
+  if (t.startsWith('cat:')) {
+    final id = int.tryParse(t.substring(4));
+    if (id != null && id > 0) {
+      return (
+        isPersonal: false,
+        catalogId: id,
+        personalKind: TikNetPersonalPickKind.defaultAuto,
+        personalTag: null,
+        personalGroupTag: null,
+      );
+    }
+  }
+
   final id = int.tryParse(t);
-  if (id != null && id > 0) return (isPersonal: false, catalogId: id);
-  return (isPersonal: true, catalogId: null);
+  if (id != null && id > 0) {
+    return (
+      isPersonal: false,
+      catalogId: id,
+      personalKind: TikNetPersonalPickKind.defaultAuto,
+      personalTag: null,
+      personalGroupTag: null,
+    );
+  }
+
+  if (t.startsWith('p:')) {
+    final parts = t.split(':');
+    if (parts.length >= 3) {
+      final kindKey = parts[1];
+      if (kindKey == 'u' && parts.length >= 3) {
+        return (
+          isPersonal: true,
+          catalogId: null,
+          personalKind: TikNetPersonalPickKind.urltest,
+          personalTag: parts[2],
+          personalGroupTag: parts.length >= 4 ? parts[3] : null,
+        );
+      }
+      if (kindKey == 'b' && parts.length >= 3) {
+        return (
+          isPersonal: true,
+          catalogId: null,
+          personalKind: TikNetPersonalPickKind.balancer,
+          personalTag: parts[2],
+          personalGroupTag: parts.length >= 4 ? parts[3] : null,
+        );
+      }
+      if (kindKey == 'n' && parts.length >= 4) {
+        return (
+          isPersonal: true,
+          catalogId: null,
+          personalKind: TikNetPersonalPickKind.proxy,
+          personalTag: parts[3],
+          personalGroupTag: parts[2],
+        );
+      }
+    }
+  }
+
+  return personalDefaultSelection();
 }
 
 String encodeServerSelection(TikNetServerSelection sel) {
-  if (sel.isPersonal || sel.catalogId == null) return 'personal';
-  return '${sel.catalogId}';
+  if (!sel.isPersonal && sel.catalogId != null) return 'cat:${sel.catalogId}';
+  if (!sel.isPersonal) return 'personal';
+  switch (sel.personalKind) {
+    case TikNetPersonalPickKind.urltest:
+      final tag = sel.personalTag ?? '';
+      final group = sel.personalGroupTag ?? '';
+      return tag.isEmpty ? 'personal' : 'p:u:$tag${group.isNotEmpty ? ':$group' : ''}';
+    case TikNetPersonalPickKind.balancer:
+      final tag = sel.personalTag ?? '';
+      final group = sel.personalGroupTag ?? '';
+      return tag.isEmpty ? 'personal' : 'p:b:$tag${group.isNotEmpty ? ':$group' : ''}';
+    case TikNetPersonalPickKind.proxy:
+      final tag = sel.personalTag ?? '';
+      final group = sel.personalGroupTag ?? '';
+      if (tag.isEmpty || group.isEmpty) return 'personal';
+      return 'p:n:$group:$tag';
+    case TikNetPersonalPickKind.defaultAuto:
+      return 'personal';
+  }
 }
+
+bool selectionNeedsOutboundApply(TikNetServerSelection sel) =>
+    sel.isPersonal &&
+    sel.catalogId == null &&
+    sel.personalKind != TikNetPersonalPickKind.defaultAuto &&
+    (sel.personalTag ?? '').isNotEmpty;

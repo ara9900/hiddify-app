@@ -16,7 +16,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
+import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_network.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
 
 /// Thrown when sync fails due to 401 (token expired). Caller should redirect to login.
 class SyncTokenExpiredException implements Exception {
@@ -57,6 +60,7 @@ class SyncService {
       final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
       if (configBytes.isEmpty) return false;
       await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
+      _ref.invalidate(personalOutboundProvider);
 
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
 
@@ -65,6 +69,10 @@ class SyncService {
         final network = appConfig['network'];
         if (network is Map) {
           await applyPanelNetworkSettings(_ref, Map<String, dynamic>.from(network));
+        }
+        final serverDisplay = appConfig['server_display'];
+        if (serverDisplay is Map) {
+          await applyPanelServerDisplaySettings(_ref, Map<String, dynamic>.from(serverDisplay));
         }
       } catch (_) {
         // app-config is best-effort; sync profile/config still succeeded
@@ -98,6 +106,7 @@ class SyncService {
       final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
       if (configBytes.isEmpty) return false;
       await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
+      _ref.invalidate(personalOutboundProvider);
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
       await auth.extendSession();
       return applyProfileFromCache();
@@ -180,6 +189,7 @@ class SyncService {
 
     await _ref.read(Preferences.tikNetProfileId.notifier).update(profileId);
     await repo.setAsActive(profileId).run();
+    await applyTikNetPersonalOutboundSelection(_ref);
     return true;
   }
 
