@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -16,14 +17,43 @@ class TikNetClientPingService {
   }) async {
     final servers = await _measureAll(catalog.servers);
     TikNetClientPingResult? personal;
-    if (catalog.personalAvailable) {
+    // In personal_only mode, per-node pings run separately; skip slow subscription URL probe.
+    if (catalog.personalAvailable &&
+        catalog.displayMode != TikNetServerDisplayMode.personalOnly) {
       personal = await measureUrl(personalSubscriptionUrl);
     }
     return TikNetServerCatalog(
       personalAvailable: catalog.personalAvailable,
       servers: servers,
       personalPing: personal,
+      displayMode: catalog.displayMode,
     );
+  }
+
+  /// Parallel pings for personal subscription nodes (bounded concurrency).
+  Future<Map<String, TikNetClientPingResult>> measureNodePings(
+    List<TikNetPersonalProxyNode> nodes,
+  ) async {
+    if (nodes.isEmpty) return const {};
+    final out = <String, TikNetClientPingResult>{};
+    var index = 0;
+
+    Future<void> worker() async {
+      while (true) {
+        final i = index;
+        index++;
+        if (i >= nodes.length) return;
+        final node = nodes[i];
+        out[node.tag] = await measureUrl(node.probeUrl.isEmpty ? null : node.probeUrl);
+      }
+    }
+
+    final workers = List.generate(
+      nodes.length < _maxConcurrent ? nodes.length : _maxConcurrent,
+      (_) => worker(),
+    );
+    await Future.wait(workers);
+    return out;
   }
 
   Future<List<TikNetServerEntry>> _measureAll(List<TikNetServerEntry> servers) async {

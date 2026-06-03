@@ -73,9 +73,6 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
   }
 
   final ping = ref.read(tikNetClientPingServiceProvider);
-  final pings = <String, TikNetClientPingResult>{};
-  for (final node in catalog.nodes) {
-    pings[node.tag] = await ping.measureUrl(node.probeUrl.isEmpty ? null : node.probeUrl);
-  }
+  final pings = await ping.measureNodePings(catalog.nodes);
   return TikNetPersonalNodesState(catalog: catalog, nodePings: pings, parseHint: hint);
 });
