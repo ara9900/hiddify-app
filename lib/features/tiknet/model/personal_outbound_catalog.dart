@@ -167,7 +167,7 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
   try {
     final decoded = jsonDecode(trimmed);
     if (decoded is! Map<String, dynamic>) return null;
-    var outboundsRaw = decoded['outbounds'];
+    var outboundsRaw = decoded['outbounds'] ?? decoded['endpoints'];
     if (outboundsRaw is! List) {
       final clashProxies = decoded['proxies'];
       if (clashProxies is List) {
