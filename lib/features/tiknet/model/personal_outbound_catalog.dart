@@ -67,7 +67,8 @@ class TikNetPersonalOutboundCatalog {
   bool get isEmpty => autoModes.isEmpty && nodes.isEmpty;
 }
 
-const _skipTypes = {'direct', 'block', 'dns', 'tun', 'interface'};
+const _skipTypes = {'direct', 'block', 'dns', 'tun', 'interface', 'freedom', 'blackhole'};
+const _xraySkipProtocols = {'freedom', 'blackhole', 'dns', 'socks', 'http', 'api'};
 
 const _proxyUriSchemes = {
   'vless',
@@ -111,6 +112,8 @@ bool shouldFetchSubscriptionOnDevice(String panelContent, String subscriptionUrl
 /// Hiddify user page URLs need /singbox/ (or /sub/) for raw config download on device.
 String normalizeSubscriptionFetchUrl(String rawUrl) {
   var url = rawUrl.trim();
+  final hash = url.indexOf('#');
+  if (hash >= 0) url = url.substring(0, hash).trim();
   if (url.isEmpty || !url.toLowerCase().startsWith('http')) return url;
   final lower = url.toLowerCase();
   if (lower.contains('/singbox') || lower.contains('/sub/') || lower.contains('/xray/')) {
@@ -208,6 +211,9 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
 
   try {
     final decoded = jsonDecode(trimmed);
+    if (decoded is List) {
+      return _catalogFromXrayConfigBundle(decoded);
+    }
     if (decoded is! Map<String, dynamic>) return null;
     var outboundsRaw = decoded['outbounds'] ?? decoded['endpoints'];
     if (outboundsRaw is! List) {
@@ -416,6 +422,53 @@ String _nodeLabel(Map<String, dynamic> o, String tag) {
   return tag;
 }
 
+/// Hiddify `/xray/` subscription: JSON array — one object per server (see remarks + outbounds).
+TikNetPersonalOutboundCatalog? _catalogFromXrayConfigBundle(List<dynamic> items) {
+  final nodes = <TikNetPersonalProxyNode>[];
+  final seenTags = <String>{};
+
+  for (var i = 0; i < items.length; i++) {
+    if (items[i] is! Map) continue;
+    final config = Map<String, dynamic>.from(items[i] as Map);
+    final remarks = (config['remarks'] as String?)?.trim() ?? '';
+    final outbounds = config['outbounds'];
+    if (outbounds is! List) continue;
+
+    for (final raw in outbounds) {
+      if (raw is! Map) continue;
+      final o = Map<String, dynamic>.from(raw);
+      final protocol = _outboundType(o);
+      if (protocol.isEmpty || _xraySkipProtocols.contains(protocol)) continue;
+      if (_skipTypes.contains(protocol)) continue;
+
+      final tag = (o['tag'] as String?)?.trim() ?? '';
+      if (tag.isEmpty || seenTags.contains(tag)) continue;
+      if (tag == 'direct' || tag == 'block' || tag == 'fragment' || tag == 'proxy' || tag == 'api') {
+        continue;
+      }
+
+      seenTags.add(tag);
+      final label = remarks.isNotEmpty ? remarks : tag;
+      nodes.add(
+        TikNetPersonalProxyNode(
+          tag: tag,
+          groupTag: 'proxy',
+          label: label,
+          probeUrl: _probeUrlFromOutbound(o),
+        ),
+      );
+      break;
+    }
+  }
+
+  if (nodes.isEmpty) return null;
+  return TikNetPersonalOutboundCatalog(
+    mainGroupTag: 'proxy',
+    autoModes: const [],
+    nodes: nodes,
+  );
+}
+
 String _probeUrlFromOutbound(Map<String, dynamic> o) {
   final hosts = <String>[];
   void addHost(String? h) {
@@ -425,6 +478,21 @@ String _probeUrlFromOutbound(Map<String, dynamic> o) {
 
   addHost(o['server'] as String?);
   addHost(o['address'] as String?);
+  final settings = o['settings'];
+  if (settings is Map<String, dynamic>) {
+    final vnext = settings['vnext'];
+    if (vnext is List) {
+      for (final vn in vnext) {
+        if (vn is Map) addHost(vn['address'] as String?);
+      }
+    }
+    final servers = settings['servers'];
+    if (servers is List) {
+      for (final s in servers) {
+        if (s is Map) addHost(s['address'] as String?);
+      }
+    }
+  }
   final tls = o['tls'];
   if (tls is Map) addHost(tls['server'] as String?);
   final reality = o['reality'];
