@@ -191,6 +191,15 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                         }),
                       ],
                     ],
+                    if (personalState?.parseHint != null && personalState!.parseHint!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                        child: Text(
+                          personalState.parseHint!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: TikNetColors.onSurfaceVariant, fontSize: 12),
+                        ),
+                      ),
                     if (personalCatalog != null &&
                         personalCatalog.isEmpty &&
                         !personalAsync.isLoading)

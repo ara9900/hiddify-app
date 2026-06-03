@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:hiddify/utils/link_parsers.dart';
+
 /// How the panel wants the server picker to behave.
 enum TikNetServerDisplayMode {
   both,
@@ -67,9 +69,96 @@ class TikNetPersonalOutboundCatalog {
 
 const _skipTypes = {'direct', 'block', 'dns', 'tun', 'interface'};
 
+const _proxyUriSchemes = {
+  'vless',
+  'vmess',
+  'trojan',
+  'ss',
+  'ssconf',
+  'tuic',
+  'hy2',
+  'hysteria2',
+  'hy',
+  'hysteria',
+  'ssh',
+  'wg',
+  'awg',
+  'shadowtls',
+  'mieru',
+  'warp',
+};
+
+/// Pasargad / Hiddify subscription: base64 or plain lines of proxy URIs.
+TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromSubscriptionLinks(String rawContent) {
+  var text = rawContent.trim();
+  if (text.isEmpty) return null;
+
+  if (!text.startsWith('{') && !text.startsWith('[')) {
+    final decoded = safeDecodeBase64(text);
+    if (decoded != text && decoded.contains('://')) {
+      text = decoded;
+    }
+  }
+
+  final lines = text.split(RegExp(r'\r?\n'));
+  final nodes = <TikNetPersonalProxyNode>[];
+  var index = 0;
+
+  for (final rawLine in lines) {
+    final line = rawLine.trim();
+    if (line.isEmpty || line.startsWith('#') || line.startsWith('//')) continue;
+
+    final uri = Uri.tryParse(line);
+    if (uri == null || !_proxyUriSchemes.contains(uri.scheme.toLowerCase())) continue;
+
+    final fragment = uri.hasFragment ? Uri.decodeComponent(uri.fragment.split(' -> ').first.trim()) : '';
+    final label = fragment.isNotEmpty ? fragment : 'سرور ${index + 1}';
+    final tag = fragment.isNotEmpty ? _safeTag(fragment, index) : 'node-$index';
+
+    nodes.add(
+      TikNetPersonalProxyNode(
+        tag: tag,
+        groupTag: 'proxy',
+        label: label,
+        probeUrl: _probeUrlFromProxyUri(uri),
+      ),
+    );
+    index++;
+  }
+
+  if (nodes.isEmpty) return null;
+  return TikNetPersonalOutboundCatalog(
+    mainGroupTag: 'proxy',
+    autoModes: const [],
+    nodes: nodes,
+  );
+}
+
+String _safeTag(String name, int index) {
+  final t = name.replaceAll(RegExp(r'[^\w\-\.\u0600-\u06FF]+'), '_').trim();
+  if (t.isNotEmpty && t.length <= 64) return t;
+  return 'node-$index';
+}
+
+String _probeUrlFromProxyUri(Uri uri) {
+  final host = uri.host;
+  if (host.isEmpty) return '';
+  final port = uri.hasPort ? uri.port : 443;
+  if (port > 0 && port != 443) return 'https://$host:$port';
+  return 'https://$host';
+}
+
 TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig) {
-  final trimmed = rawConfig.trim();
+  var trimmed = rawConfig.trim();
   if (trimmed.isEmpty) return null;
+
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    final decoded = safeDecodeBase64(trimmed);
+    if (decoded.startsWith('{') || decoded.startsWith('[')) {
+      trimmed = decoded;
+    }
+  }
+
   try {
     final decoded = jsonDecode(trimmed);
     if (decoded is! Map<String, dynamic>) return null;
