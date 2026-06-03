@@ -16,6 +16,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_panel_network.dart';
 
 /// Thrown when sync fails due to 401 (token expired). Caller should redirect to login.
 class SyncTokenExpiredException implements Exception {
@@ -58,6 +59,17 @@ class SyncService {
       await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
 
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
+
+      try {
+        final appConfig = await api.getAppConfig(baseUrl: baseUrl, accessToken: token);
+        final network = appConfig['network'];
+        if (network is Map) {
+          await applyPanelNetworkSettings(_ref, Map<String, dynamic>.from(network));
+        }
+      } catch (_) {
+        // app-config is best-effort; sync profile/config still succeeded
+      }
+
       await auth.extendSession();
       unawaited(_ref.read(tikNetDeviceServiceProvider).registerIfLoggedIn());
       return true;

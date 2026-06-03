@@ -253,6 +253,17 @@ class TikNetApi {
     );
   }
 
+  /// GET /api/customer/app-config — panel bootstrap (includes network.dns).
+  Future<Map<String, dynamic>> getAppConfig({required String baseUrl, required String accessToken}) async {
+    final dio = _dio(baseUrl);
+    final response = await dio.get<Map<String, dynamic>>(
+      '/api/customer/app-config',
+      options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+    );
+    if (response.data == null) throw TikNetApiException('Empty response');
+    return response.data!;
+  }
+
   /// GET /api/customer/subscription/config - returns raw bytes
   Future<List<int>> getSubscriptionConfig({required String baseUrl, required String accessToken}) async {
     final dio = _dio(baseUrl);
