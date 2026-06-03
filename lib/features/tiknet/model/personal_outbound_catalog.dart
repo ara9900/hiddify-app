@@ -175,6 +175,12 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
     final autoModes = <TikNetPersonalAutoMode>[];
     final nodes = <TikNetPersonalProxyNode>[];
 
+    final byTag = <String, Map<String, dynamic>>{};
+    for (final o in outbounds) {
+      final tag = (o['tag'] as String?)?.trim() ?? '';
+      if (tag.isNotEmpty) byTag[tag] = o;
+    }
+
     for (final o in outbounds) {
       final type = (o['type'] as String?)?.toLowerCase() ?? '';
       final tag = (o['tag'] as String?)?.trim() ?? '';
@@ -217,6 +223,10 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
       );
     }
 
+    if (nodes.isEmpty) {
+      _appendNodesFromOutboundRefs(outbounds, mainGroup, nodes, byTag);
+    }
+
     return TikNetPersonalOutboundCatalog(
       mainGroupTag: mainGroup,
       autoModes: autoModes,
@@ -224,6 +234,54 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
     );
   } catch (_) {
     return null;
+  }
+}
+
+void _appendNodesFromOutboundRefs(
+  List<Map<String, dynamic>> outbounds,
+  String mainGroup,
+  List<TikNetPersonalProxyNode> nodes,
+  Map<String, Map<String, dynamic>> byTag,
+) {
+  final seen = <String>{};
+  const refTypes = {'selector', 'urltest', 'balancer'};
+
+  for (final o in outbounds) {
+    final type = (o['type'] as String?)?.toLowerCase() ?? '';
+    if (!refTypes.contains(type)) continue;
+    final refs = o['outbounds'];
+    if (refs is! List) continue;
+    final groupTag = (o['tag'] as String?)?.trim().isNotEmpty == true ? (o['tag'] as String).trim() : mainGroup;
+
+    for (final ref in refs) {
+      final tag = ref.toString().trim();
+      if (tag.isEmpty || seen.contains(tag)) continue;
+      if (tag == 'direct' || tag == 'block' || tag == 'dns' || tag == 'auto') continue;
+
+      final def = byTag[tag];
+      final defType = (def?['type'] as String?)?.toLowerCase() ?? '';
+      if (def != null && !_skipTypes.contains(defType) && defType != 'selector') {
+        seen.add(tag);
+        nodes.add(
+          TikNetPersonalProxyNode(
+            tag: tag,
+            groupTag: groupTag,
+            label: _nodeLabel(def, tag),
+            probeUrl: _probeUrlFromOutbound(def),
+          ),
+        );
+      } else if (def == null) {
+        seen.add(tag);
+        nodes.add(
+          TikNetPersonalProxyNode(
+            tag: tag,
+            groupTag: groupTag,
+            label: tag,
+            probeUrl: '',
+          ),
+        );
+      }
+    }
   }
 }
 

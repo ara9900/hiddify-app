@@ -30,38 +30,45 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
     profileId = ref.read(Preferences.tikNetProfileId);
   }
 
-  String? content;
+  final candidates = <String>[];
+  final rawB64 = ref.read(Preferences.tikNetCachedConfig);
+  if (rawB64.isNotEmpty) {
+    try {
+      final decoded = utf8.decode(base64Decode(rawB64));
+      if (decoded.trim().isNotEmpty) candidates.add(decoded);
+    } catch (_) {}
+  }
+
   if (profileId.isNotEmpty) {
     try {
       final repo = await ref.read(profileRepositoryProvider.future);
+      final rawProfile = await repo.getRawConfig(profileId).run();
+      rawProfile.fold((_) {}, (c) {
+        if (c.trim().isNotEmpty) candidates.add(c);
+      });
       final generated = await repo.generateConfig(profileId).run();
       generated.fold((_) {}, (c) {
-        if (c.trim().isNotEmpty) content = c;
+        if (c.trim().isNotEmpty) candidates.add(c);
       });
     } catch (_) {}
   }
 
-  if (content == null || content!.trim().isEmpty) {
-    final rawB64 = ref.read(Preferences.tikNetCachedConfig);
-    if (rawB64.isNotEmpty) {
-      try {
-        content = utf8.decode(base64Decode(rawB64));
-      } catch (_) {}
-    }
-  }
-
-  if (content == null || content!.trim().isEmpty) {
+  if (candidates.isEmpty) {
     return const TikNetPersonalNodesState(catalog: null, nodePings: {});
   }
 
-  var catalog = parsePersonalOutboundsFromConfig(content!);
+  TikNetPersonalOutboundCatalog? catalog;
   String? hint;
-
-  if (catalog == null || catalog.nodes.isEmpty) {
-    catalog = parsePersonalOutboundsFromSubscriptionLinks(content!);
-    if (catalog != null && catalog.nodes.isNotEmpty && profileId.isEmpty) {
-      hint = 'برای انتخاب هر سرور، یک‌بار «بروزرسانی» در حساب من بزنید.';
+  for (final raw in candidates) {
+    catalog = parsePersonalOutboundsFromConfig(raw);
+    if (catalog == null || catalog.nodes.isEmpty) {
+      catalog = parsePersonalOutboundsFromSubscriptionLinks(raw);
     }
+    if (catalog != null && !catalog.isEmpty) break;
+  }
+
+  if (catalog != null && catalog.nodes.isNotEmpty && profileId.isEmpty) {
+    hint = 'برای انتخاب هر سرور، یک‌بار «بروزرسانی» در حساب من بزنید.';
   }
 
   if (catalog == null || catalog.isEmpty) {
