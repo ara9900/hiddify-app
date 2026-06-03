@@ -4,10 +4,12 @@ import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 final serverCatalogProvider = FutureProvider<TikNetServerCatalog>((ref) async {
   ref.watch(Preferences.tikNetAccessToken);
+  ref.watch(Preferences.tikNetServerDisplayMode);
   final auth = ref.read(authServiceProvider);
   if (!auth.hasAppSession()) {
     return const TikNetServerCatalog(personalAvailable: false, servers: []);
@@ -20,14 +22,27 @@ final serverCatalogProvider = FutureProvider<TikNetServerCatalog>((ref) async {
   try {
     final api = ref.read(tikNetApiProvider);
     final data = await api.getServerCatalog(baseUrl: baseUrl, accessToken: token);
-    final modeRaw = (data['display_mode'] as String?)?.trim();
+    var modeRaw = (data['display_mode'] as String?)?.trim();
+    if (modeRaw == null || modeRaw.isEmpty) {
+      try {
+        final appConfig = await api.getAppConfig(baseUrl: baseUrl, accessToken: token);
+        final serverDisplay = appConfig['server_display'];
+        if (serverDisplay is Map) {
+          await applyPanelServerDisplaySettings(ref, Map<String, dynamic>.from(serverDisplay));
+        }
+        modeRaw = ref.read(Preferences.tikNetServerDisplayMode);
+      } catch (_) {}
+    }
     if (modeRaw != null && modeRaw.isNotEmpty) {
       final current = ref.read(Preferences.tikNetServerDisplayMode);
       if (current != modeRaw) {
         await ref.read(Preferences.tikNetServerDisplayMode.notifier).update(modeRaw);
       }
     }
-    final mode = TikNetServerDisplayMode.fromApi(modeRaw);
+    final effectiveModeRaw = (modeRaw != null && modeRaw.isNotEmpty)
+        ? modeRaw
+        : ref.read(Preferences.tikNetServerDisplayMode);
+    final mode = TikNetServerDisplayMode.fromApi(effectiveModeRaw);
     var catalog = TikNetServerCatalog.fromJson(data);
     catalog = TikNetServerCatalog(
       personalAvailable: mode == TikNetServerDisplayMode.catalogOnly ? false : catalog.personalAvailable,
