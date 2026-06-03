@@ -39,6 +39,7 @@ class TikNetUserInfo {
     this.fullName,
     this.expireDate,
     required this.hasSubscription,
+    this.subscriptionUrl,
     this.planName,
     this.isExpired,
     this.daysRemaining,
@@ -51,6 +52,7 @@ class TikNetUserInfo {
   final String? fullName;
   final DateTime? expireDate;
   final bool hasSubscription;
+  final String? subscriptionUrl;
   final String? planName;
   final bool? isExpired;
   final int? daysRemaining;
@@ -67,6 +69,7 @@ class TikNetUserInfo {
       fullName: json['full_name'] as String?,
       expireDate: expireStr != null ? DateTime.tryParse(expireStr) : null,
       hasSubscription: json['has_subscription'] as bool? ?? false,
+      subscriptionUrl: (json['subscription_url'] as String?)?.trim(),
       planName: json['plan_name'] as String?,
       isExpired: json['is_expired'] as bool?,
       daysRemaining: (json['days_remaining'] as num?)?.toInt(),

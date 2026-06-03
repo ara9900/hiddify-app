@@ -55,12 +55,16 @@ class SyncService {
 
     try {
       final profile = await api.getMe(baseUrl: baseUrl, accessToken: token);
+      if (profile.subscriptionUrl != null && profile.subscriptionUrl!.trim().isNotEmpty) {
+        await _ref.read(Preferences.tikNetSubscriptionUrl.notifier).update(profile.subscriptionUrl!.trim());
+      }
       final profileJson = _profileToJson(profile);
       await _ref.read(Preferences.tikNetCachedProfile.notifier).update(jsonEncode(profileJson));
 
       final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
       if (configBytes.isEmpty) return false;
       await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
+      await applyProfileFromCache();
       _ref.invalidate(personalOutboundProvider);
 
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
@@ -107,10 +111,11 @@ class SyncService {
       final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
       if (configBytes.isEmpty) return false;
       await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
+      await applyProfileFromCache();
       _ref.invalidate(personalOutboundProvider);
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
       await auth.extendSession();
-      return applyProfileFromCache();
+      return true;
     } on DioException catch (e) {
       if (e.response?.statusCode == 401 && await auth.clearSessionIfUnauthorized()) {
         throw SyncTokenExpiredException();
@@ -139,6 +144,13 @@ class SyncService {
 
   Future<void> setSelectedServer(TikNetServerSelection selection) async {
     await _ref.read(Preferences.tikNetSelectedServer.notifier).update(encodeServerSelection(selection));
+  }
+
+  /// Downloads subscription on device (same path as stock Hiddify). Used when panel bytes do not list nodes.
+  Future<bool> applyRemoteSubscriptionProfile() async {
+    final subUrl = normalizeSubscriptionFetchUrl(_ref.read(Preferences.tikNetSubscriptionUrl));
+    if (!subUrl.toLowerCase().startsWith('http')) return false;
+    return _applyRemoteSubscriptionProfile(subUrl);
   }
 
   /// Applies cached panel config to local Hiddify profile [tikNetProfileDisplayName].
@@ -275,6 +287,7 @@ class SyncService {
       'full_name': p.fullName,
       'expire_date': p.expireDate?.toIso8601String(),
       'has_subscription': p.hasSubscription,
+      if (p.subscriptionUrl != null && p.subscriptionUrl!.isNotEmpty) 'subscription_url': p.subscriptionUrl,
       if (p.planName != null) 'plan_name': p.planName,
       if (p.isExpired != null) 'is_expired': p.isExpired,
       if (p.daysRemaining != null) 'days_remaining': p.daysRemaining,

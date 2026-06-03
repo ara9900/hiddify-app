@@ -61,11 +61,35 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
   TikNetPersonalOutboundCatalog? catalog;
   String? hint;
   for (final raw in candidates) {
-    catalog = parsePersonalOutboundsFromConfig(raw);
-    if (catalog == null || catalog.nodes.isEmpty) {
-      catalog = parsePersonalOutboundsFromSubscriptionLinks(raw);
+    final parsed = parsePersonalOutboundsFromAny(raw);
+    if (parsed == null || parsed.isEmpty) continue;
+    if (catalog == null || parsed.nodes.length > catalog.nodes.length) {
+      catalog = parsed;
     }
-    if (catalog != null && !catalog.isEmpty) break;
+    if (catalog!.nodes.isNotEmpty) break;
+  }
+
+  if (catalog == null || catalog.nodes.isEmpty) {
+    final subUrl = normalizeSubscriptionFetchUrl(ref.read(Preferences.tikNetSubscriptionUrl));
+    if (subUrl.toLowerCase().startsWith('http')) {
+      final applied = await ref.read(syncServiceProvider).applyRemoteSubscriptionProfile();
+      if (applied) {
+        profileId = ref.read(Preferences.tikNetProfileId);
+        if (profileId.isNotEmpty) {
+          try {
+            final repo = await ref.read(profileRepositoryProvider.future);
+            final rawProfile = await repo.getRawConfig(profileId).run();
+            rawProfile.fold((_) {}, (c) {
+              if (c.trim().isEmpty) return;
+              final parsed = parsePersonalOutboundsFromAny(c);
+              if (parsed != null && (catalog == null || parsed.nodes.length > catalog!.nodes.length)) {
+                catalog = parsed;
+              }
+            });
+          } catch (_) {}
+        }
+      }
+    }
   }
 
   if (catalog != null && catalog.nodes.isNotEmpty && profileId.isEmpty) {

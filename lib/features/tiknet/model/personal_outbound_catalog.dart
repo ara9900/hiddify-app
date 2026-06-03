@@ -88,18 +88,24 @@ const _proxyUriSchemes = {
   'warp',
 };
 
-/// True when panel bytes do not list nodes but we have an HTTP subscription URL —
-/// import should use [ProfileRepository.upsertRemote] so the phone fetches like Hiddify app.
+/// Parses panel/subscription bytes into a catalog (for deciding phone-side fetch).
+TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromAny(String rawContent) {
+  final trimmed = rawContent.trim();
+  if (trimmed.isEmpty) return null;
+  var catalog = parsePersonalOutboundsFromConfig(trimmed);
+  if (catalog == null || catalog.nodes.isEmpty) {
+    final links = parsePersonalOutboundsFromSubscriptionLinks(trimmed);
+    if (links != null && links.nodes.isNotEmpty) return links;
+  }
+  return catalog;
+}
+
+/// True when we should import via [ProfileRepository.upsertRemote] on the phone.
 bool shouldFetchSubscriptionOnDevice(String panelContent, String subscriptionUrl) {
   final url = subscriptionUrl.trim();
   if (!url.toLowerCase().startsWith('http')) return false;
-  final trimmed = panelContent.trim();
-  if (trimmed.isEmpty) return true;
-  var catalog = parsePersonalOutboundsFromConfig(trimmed);
-  if (catalog == null || catalog.isEmpty) {
-    catalog = parsePersonalOutboundsFromSubscriptionLinks(trimmed);
-  }
-  return catalog == null || catalog.isEmpty;
+  final catalog = parsePersonalOutboundsFromAny(panelContent);
+  return catalog == null || catalog.nodes.isEmpty;
 }
 
 /// Hiddify user page URLs need /singbox/ (or /sub/) for raw config download on device.
@@ -110,9 +116,16 @@ String normalizeSubscriptionFetchUrl(String rawUrl) {
   if (lower.contains('/singbox') || lower.contains('/sub/') || lower.contains('/xray/')) {
     return url;
   }
-  if (RegExp(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', caseSensitive: false).hasMatch(url) &&
-      url.endsWith('/')) {
-    return '${url}singbox/';
+  final uuid = RegExp(
+    r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+    caseSensitive: false,
+  ).firstMatch(url);
+  if (uuid != null) {
+    final tail = url.substring(uuid.end).toLowerCase();
+    if (tail.isEmpty || tail == '/') {
+      if (!url.endsWith('/')) url = '$url/';
+      return '${url}singbox/';
+    }
   }
   return url;
 }

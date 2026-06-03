@@ -51,9 +51,20 @@ void main() {
       'https://sub.example/12345678-1234-1234-1234-123456789abc/singbox/',
     );
     expect(
+      normalizeSubscriptionFetchUrl('https://sub.example/12345678-1234-1234-1234-123456789abc'),
+      'https://sub.example/12345678-1234-1234-1234-123456789abc/singbox/',
+    );
+    expect(
       normalizeSubscriptionFetchUrl('https://sub.example/uuid/singbox/'),
       'https://sub.example/uuid/singbox/',
     );
+  });
+
+  test('shouldFetchSubscriptionOnDevice when only urltest modes exist without nodes', () {
+    const raw = '''
+{"outbounds":[{"type":"urltest","tag":"auto","outbounds":["DE"]}]}
+''';
+    expect(shouldFetchSubscriptionOnDevice(raw, 'https://sub.example/uuid/'), isTrue);
   });
 
   test('parsePersonalOutboundsFromSubscriptionLinks reads base64 vless lines', () {
