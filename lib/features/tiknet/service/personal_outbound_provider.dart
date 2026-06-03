@@ -33,27 +33,51 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
 
   final candidates = <String>[];
 
-  final rawB64 = ref.read(Preferences.tikNetCachedConfig);
-  if (rawB64.isNotEmpty) {
-    try {
-      final decoded = utf8.decode(base64Decode(rawB64));
-      if (decoded.trim().isNotEmpty) candidates.add(decoded);
-    } catch (_) {}
-  }
-
   if (profileId.isNotEmpty) {
     try {
       final repo = await ref.read(profileRepositoryProvider.future);
       final rawProfile = await repo.getRawConfig(profileId).run();
       rawProfile.fold((_) {}, (c) {
-        if (c.trim().isNotEmpty) candidates.add(c);
+        if (c.trim().isNotEmpty && !isHiddifyXraySubscriptionBundle(c)) candidates.add(c);
       });
-      // Do not call generateConfig here — Hiddify xray bundles can hang the UI for minutes.
+    } catch (_) {}
+  }
+
+  final rawB64 = ref.read(Preferences.tikNetCachedConfig);
+  if (rawB64.isNotEmpty) {
+    try {
+      final decoded = utf8.decode(base64Decode(rawB64));
+      if (decoded.trim().isNotEmpty && !isHiddifyXraySubscriptionBundle(decoded)) {
+        candidates.add(decoded);
+      }
     } catch (_) {}
   }
 
   if (candidates.isEmpty) {
-    return const TikNetPersonalNodesState(catalog: null, nodePings: {});
+    final subUrl = normalizeSubscriptionFetchUrl(ref.read(Preferences.tikNetSubscriptionUrl));
+    if (subUrl.toLowerCase().startsWith('http')) {
+      try {
+        final applied = await ref
+            .read(syncServiceProvider)
+            .applyRemoteSubscriptionProfile()
+            .timeout(const Duration(seconds: 40));
+        if (applied) {
+          profileId = ref.read(Preferences.tikNetProfileId);
+          if (profileId.isNotEmpty) {
+            final repo = await ref.read(profileRepositoryProvider.future);
+            final rawProfile = await repo.getRawConfig(profileId).run();
+            rawProfile.fold((_) {}, (c) {
+              if (c.trim().isNotEmpty && !isHiddifyXraySubscriptionBundle(c)) candidates.add(c);
+            });
+          }
+        }
+      } on TimeoutException {
+        // fall through
+      }
+    }
+    if (candidates.isEmpty) {
+      return const TikNetPersonalNodesState(catalog: null, nodePings: {});
+    }
   }
 
   TikNetPersonalOutboundCatalog? catalog;
@@ -111,17 +135,14 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
     );
   }
 
-  // Never block the server picker on per-node pings (Hiddify subs can have 15+ nodes × 5s each).
   var pings = const <String, TikNetClientPingResult>{};
-  if (resolved.nodes.length <= 6) {
-    try {
-      pings = await ref
-          .read(tikNetClientPingServiceProvider)
-          .measureNodePings(resolved.nodes)
-          .timeout(const Duration(seconds: 8));
-    } on TimeoutException {
-      pings = const {};
-    }
+  try {
+    pings = await ref
+        .read(tikNetClientPingServiceProvider)
+        .measureNodePings(resolved.nodes, fast: true)
+        .timeout(const Duration(seconds: 14));
+  } on TimeoutException {
+    pings = const {};
   }
 
   return TikNetPersonalNodesState(catalog: resolved, nodePings: pings, parseHint: hint);

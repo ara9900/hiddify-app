@@ -9,6 +9,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// Measures reachability/latency from the user's device (ISP/regional path).
 class TikNetClientPingService {
   static const _connectTimeout = Duration(seconds: 5);
+  static const _fastConnectTimeout = Duration(seconds: 2);
   static const _maxConcurrent = 4;
 
   Future<TikNetServerCatalog> measureCatalog(
@@ -32,19 +33,24 @@ class TikNetClientPingService {
 
   /// Parallel pings for personal subscription nodes (bounded concurrency).
   Future<Map<String, TikNetClientPingResult>> measureNodePings(
-    List<TikNetPersonalProxyNode> nodes,
-  ) async {
+    List<TikNetPersonalProxyNode> nodes, {
+    bool fast = false,
+  }) async {
     if (nodes.isEmpty) return const {};
     final out = <String, TikNetClientPingResult>{};
     var index = 0;
+    final toMeasure = fast && nodes.length > 12 ? nodes.take(12).toList() : nodes;
 
     Future<void> worker() async {
       while (true) {
         final i = index;
         index++;
-        if (i >= nodes.length) return;
-        final node = nodes[i];
-        out[node.tag] = await measureUrl(node.probeUrl.isEmpty ? null : node.probeUrl);
+        if (i >= toMeasure.length) return;
+        final node = toMeasure[i];
+        out[node.tag] = await measureUrl(
+          node.probeUrl.isEmpty ? null : node.probeUrl,
+          fast: fast,
+        );
       }
     }
 
@@ -90,7 +96,7 @@ class TikNetClientPingService {
   }
 
   /// HTTP HEAD then TCP :443 fallback. [pingMs] is -1 when unreachable.
-  Future<TikNetClientPingResult> measureUrl(String? raw) async {
+  Future<TikNetClientPingResult> measureUrl(String? raw, {bool fast = false}) async {
     final url = (raw ?? '').trim();
     if (url.isEmpty) {
       return const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
@@ -99,6 +105,25 @@ class TikNetClientPingService {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.host.isEmpty) {
       return const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+    }
+
+    if (fast) {
+      final sw = Stopwatch()..start();
+      try {
+        final port = uri.hasPort ? uri.port : 443;
+        final socket = await Socket.connect(uri.host, port, timeout: _fastConnectTimeout);
+        await socket.close();
+        sw.stop();
+        return TikNetClientPingResult(
+          state: TikNetClientPingState.reachable,
+          pingMs: sw.elapsedMilliseconds,
+        );
+      } catch (_) {
+        return const TikNetClientPingResult(
+          state: TikNetClientPingState.unreachable,
+          pingMs: -1,
+        );
+      }
     }
 
     final target = uri.hasScheme ? url : 'https://$url';

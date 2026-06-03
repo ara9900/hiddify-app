@@ -106,6 +106,15 @@ class SyncService {
     final token = auth.getToken();
     if (baseUrl.isEmpty || token.isEmpty) return false;
 
+    final selection = parseServerSelection(_ref.read(Preferences.tikNetSelectedServer));
+    if (selection.isPersonal && _ref.read(Preferences.tikNetProfileId).isNotEmpty) {
+      final cached = getConfigs();
+      if (isHiddifyXraySubscriptionBundle(cached)) {
+        return applyRemoteSubscriptionProfile();
+      }
+      return true;
+    }
+
     final api = _ref.read(tikNetApiProvider);
     try {
       final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
@@ -162,7 +171,8 @@ class SyncService {
 
   Future<bool> _applyProfileContent(String content) async {
     final subUrl = normalizeSubscriptionFetchUrl(_ref.read(Preferences.tikNetSubscriptionUrl));
-    if (shouldFetchSubscriptionOnDevice(content, subUrl)) {
+    if (isHiddifyXraySubscriptionBundle(content) ||
+        shouldFetchSubscriptionOnDevice(content, subUrl)) {
       return _applyRemoteSubscriptionProfile(subUrl);
     }
     return _applyLocalProfileContent(content);

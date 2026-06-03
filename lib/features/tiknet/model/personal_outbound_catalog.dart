@@ -89,6 +89,27 @@ const _proxyUriSchemes = {
   'warp',
 };
 
+/// Hiddify `/xray/` body: JSON array of per-server Xray configs — valid for listing only, not for sing-box core.
+bool isHiddifyXraySubscriptionBundle(String rawContent) {
+  var trimmed = rawContent.trim();
+  if (trimmed.isEmpty) return false;
+  if (!trimmed.startsWith('[')) {
+    final decoded = safeDecodeBase64(trimmed);
+    if (!decoded.startsWith('[')) return false;
+    trimmed = decoded;
+  }
+  try {
+    final decoded = jsonDecode(trimmed);
+    if (decoded is! List || decoded.isEmpty) return false;
+    final first = decoded.first;
+    if (first is! Map) return false;
+    final map = Map<String, dynamic>.from(first);
+    return map.containsKey('remarks') && map['outbounds'] is List;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Parses panel/subscription bytes into a catalog (for deciding phone-side fetch).
 TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromAny(String rawContent) {
   final trimmed = rawContent.trim();
@@ -105,19 +126,25 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromAny(String rawContent) 
 bool shouldFetchSubscriptionOnDevice(String panelContent, String subscriptionUrl) {
   final url = subscriptionUrl.trim();
   if (!url.toLowerCase().startsWith('http')) return false;
+  if (isHiddifyXraySubscriptionBundle(panelContent)) return true;
   final catalog = parsePersonalOutboundsFromAny(panelContent);
   return catalog == null || catalog.nodes.isEmpty;
 }
 
-/// Hiddify user page URLs need /singbox/ (or /sub/) for raw config download on device.
+/// Hiddify user page URLs need /singbox/ for VPN core (not /xray/ JSON bundle).
 String normalizeSubscriptionFetchUrl(String rawUrl) {
   var url = rawUrl.trim();
   final hash = url.indexOf('#');
   if (hash >= 0) url = url.substring(0, hash).trim();
   if (url.isEmpty || !url.toLowerCase().startsWith('http')) return url;
   final lower = url.toLowerCase();
-  if (lower.contains('/singbox') || lower.contains('/sub/') || lower.contains('/xray/')) {
+  if (lower.contains('/xray/') || lower.endsWith('/xray')) {
+    url = url.replaceAll(RegExp(r'/xray/?$', caseSensitive: false), '/singbox/');
+    if (!url.endsWith('/')) url = '$url/';
     return url;
+  }
+  if (lower.contains('/singbox') || lower.contains('/sub/')) {
+    return url.endsWith('/') ? url : '$url/';
   }
   final uuid = RegExp(
     r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',

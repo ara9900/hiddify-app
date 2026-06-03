@@ -67,13 +67,19 @@ void main() {
     expect(shouldFetchSubscriptionOnDevice(raw, 'https://sub.example/uuid/'), isTrue);
   });
 
-  test('normalizeSubscriptionFetchUrl strips Hiddify display fragment', () {
+  test('normalizeSubscriptionFetchUrl strips fragment and uses singbox not xray', () {
     expect(
       normalizeSubscriptionFetchUrl(
         'https://stream.24insta.ir/PJQ3wwl6yaKoDnc0WZrA/3f904906-66e2-4003-b6f5-26f67254562b/xray/#prs360',
       ),
-      'https://stream.24insta.ir/PJQ3wwl6yaKoDnc0WZrA/3f904906-66e2-4003-b6f5-26f67254562b/xray/',
+      'https://stream.24insta.ir/PJQ3wwl6yaKoDnc0WZrA/3f904906-66e2-4003-b6f5-26f67254562b/singbox/',
     );
+  });
+
+  test('isHiddifyXraySubscriptionBundle detects xray JSON array', () {
+    const raw = '[{"remarks":"s1","outbounds":[{"protocol":"vless","tag":"n1"}]}]';
+    expect(isHiddifyXraySubscriptionBundle(raw), isTrue);
+    expect(isHiddifyXraySubscriptionBundle('{"outbounds":[]}'), isFalse);
   });
 
   test('parsePersonalOutboundsFromConfig supports Hiddify xray JSON array bundle', () {
