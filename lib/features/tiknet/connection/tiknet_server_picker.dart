@@ -132,7 +132,8 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                       enabled: true,
                       onTap: () => _select(context, ref, sync, personalDefaultSelection()),
                     ),
-                    if (personalAsync.isLoading && (personalCatalog == null || personalCatalog.isEmpty))
+                    if (personalAsync.isLoading &&
+                        (personalCatalog == null || personalCatalog.nodes.isEmpty))
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 24),
                         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
