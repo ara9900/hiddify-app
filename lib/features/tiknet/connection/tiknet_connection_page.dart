@@ -54,13 +54,6 @@ class TikNetConnectionPage extends HookConsumerWidget {
     final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider)?.expireDate;
 
     useEffect(() {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ensureTikNetDnsFromProfile(ref);
-      });
-      return null;
-    }, const []);
-
-    useEffect(() {
       if (subscriptionExpired && ref.read(connectionNotifierProvider).valueOrNull is Connected) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           ref.read(connectionNotifierProvider.notifier).abortConnection();
