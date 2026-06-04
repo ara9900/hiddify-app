@@ -12,9 +12,13 @@ import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/per_app_proxy/model/app_package_info.dart';
 import 'package:hiddify/features/per_app_proxy/model/per_app_proxy_mode.dart';
 import 'package:hiddify/features/per_app_proxy/model/pkg_flag.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
+import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_loading_notifier.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
+import 'package:hiddify/features/tiknet/widgets/tiknet_loading_view.dart';
+import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:installed_apps/index.dart';
@@ -22,16 +26,21 @@ import 'package:installed_apps/index.dart';
 class PerAppProxyPage extends HookConsumerWidget with PresLogger {
   const PerAppProxyPage({super.key});
 
+  /// Apps the user explicitly turned on stay at the top of the list.
+  static bool isManuallyEnabled(Map<String, int> selected, String packageName) {
+    final flag = selected[packageName];
+    if (flag == null) return false;
+    return PkgFlag.userSelection.check(flag) && PkgFlag.checkboxValue(flag) == true;
+  }
+
   int _getPriority(AppPackageInfo app, Map<String, int> selected) {
     final flag = selected[app.packageName];
-    if (flag == null) return 4;
-    if (PkgFlag.userSelection.check(flag)) {
-      return 1;
-    } else if (PkgFlag.autoSelection.check(flag) && !PkgFlag.forceDeselection.check(flag)) {
-      return 2;
-    } else {
-      return 3;
-    }
+    if (flag == null) return 5;
+    if (PkgFlag.userSelection.check(flag) && PkgFlag.checkboxValue(flag) == true) return 0;
+    if (PkgFlag.userSelection.check(flag)) return 1;
+    if (PkgFlag.autoSelection.check(flag) && !PkgFlag.forceDeselection.check(flag)) return 2;
+    if (PkgFlag.forceDeselection.check(flag)) return 3;
+    return 4;
   }
 
   Future<Set<AppPackageInfo>> getApps(bool hideSystem) async {
@@ -299,44 +308,154 @@ class PerAppProxyPage extends HookConsumerWidget with PresLogger {
             )
           : null,
       body: displayedApps.when(
-        data: (packages) => ListView.builder(
-          padding: const EdgeInsets.only(bottom: 88),
-          controller: scrollController,
-          itemBuilder: (context, index) {
-            final package = packages[index];
-            final flag = selectedApps.requireValue[package.packageName];
-            return CheckboxListTile.adaptive(
-              title: Row(
-                children: [
-                  Flexible(child: Text(package.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  if (flag != null && PkgFlag.forceDeselection.check(flag)) ...[
-                    const Gap(6),
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(color: theme.colorScheme.error, shape: BoxShape.circle),
-                    ),
-                  ],
-                ],
+        data: (packages) {
+          final selectedMap = selectedApps.requireValue;
+          final pinned = mode != null
+              ? packages.where((p) => isManuallyEnabled(selectedMap, p.packageName)).toList()
+              : <AppPackageInfo>[];
+          return CustomScrollView(
+            controller: scrollController,
+            slivers: [
+              if (tikNetMode && mode != null && pinned.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _PinnedAppsSection(
+                    apps: pinned,
+                    onTap: (pkg) => ref.read(PerAppProxyProvider(mode).notifier).updatePkg(pkg.packageName),
+                  ),
+                ),
+              SliverPadding(
+                padding: const EdgeInsets.only(bottom: 88),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final package = packages[index];
+                      final flag = selectedMap[package.packageName];
+                      final manualOn = isManuallyEnabled(selectedMap, package.packageName);
+                      return CheckboxListTile.adaptive(
+                        tileColor: manualOn ? theme.colorScheme.primary.withValues(alpha: 0.06) : null,
+                        title: Row(
+                          children: [
+                            Flexible(child: Text(package.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                            if (manualOn) ...[
+                              const Gap(6),
+                              Icon(Icons.push_pin_rounded, size: 16, color: theme.colorScheme.primary),
+                            ],
+                            if (flag != null && PkgFlag.forceDeselection.check(flag)) ...[
+                              const Gap(6),
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(color: theme.colorScheme.error, shape: BoxShape.circle),
+                              ),
+                            ],
+                          ],
+                        ),
+                        subtitle: Text(
+                          package.packageName,
+                          style: Theme.of(context).textTheme.bodySmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        value: flag == null ? false : PkgFlag.checkboxValue(flag),
+                        tristate: true,
+                        onChanged: (_) {
+                          ref.read(PerAppProxyProvider(mode).notifier).updatePkg(package.packageName);
+                          sortListener.value = !sortListener.value;
+                        },
+                        secondary: package.icon == null
+                            ? null
+                            : Image.memory(package.icon!, width: 48, height: 48, cacheWidth: 48, cacheHeight: 48),
+                      );
+                    },
+                    childCount: packages.length,
+                  ),
+                ),
               ),
-              subtitle: Text(
-                package.packageName,
-                style: Theme.of(context).textTheme.bodySmall,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              value: flag == null ? false : PkgFlag.checkboxValue(flag),
-              tristate: true,
-              onChanged: (_) => ref.read(PerAppProxyProvider(mode).notifier).updatePkg(package.packageName),
-              secondary: package.icon == null
-                  ? null
-                  : Image.memory(package.icon!, width: 48, height: 48, cacheWidth: 48, cacheHeight: 48),
-            );
-          },
-          itemCount: packages.length,
-        ),
+            ],
+          );
+        },
         error: (error, _) => SliverErrorBodyPlaceholder(error.toString()),
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => tikNetMode ? const TikNetPerAppProxyLoadingView() : const Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
+}
+
+class _PinnedAppsSection extends StatelessWidget {
+  const _PinnedAppsSection({required this.apps, required this.onTap});
+
+  final List<AppPackageInfo> apps;
+  final void Function(AppPackageInfo pkg) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.check_circle_rounded, size: 18, color: TikNetColors.connected),
+              const Gap(8),
+              Text(
+                'اپ‌های روشن‌شده (${toPersianDigits('${apps.length}')})',
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const Gap(10),
+          SizedBox(
+            height: 76,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: apps.length,
+              separatorBuilder: (_, _) => const Gap(8),
+              itemBuilder: (context, index) {
+                final app = apps[index];
+                return Material(
+                  color: TikNetColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    onTap: () => onTap(app),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      width: 132,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: TikNetColors.primary.withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
+                        children: [
+                          if (app.icon != null)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.memory(app.icon!, width: 40, height: 40, cacheWidth: 40, cacheHeight: 40),
+                            )
+                          else
+                            const Icon(Icons.android_rounded, size: 40),
+                          const Gap(8),
+                          Expanded(
+                            child: Text(
+                              app.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const Gap(8),
+          Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.3)),
+        ],
       ),
     );
   }
