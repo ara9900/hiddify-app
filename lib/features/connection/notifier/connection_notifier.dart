@@ -12,6 +12,7 @@ import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
@@ -79,6 +80,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         ref.read(Preferences.startedByUser.notifier).update(false);
       }
       loggy.info("connection status: ${event.format()}");
+      if (tikNetMode) {
+        TikNetDiagnosticLog.i('vpn', event.format(), {
+          'started_by_user': ref.read(Preferences.startedByUser),
+          'ignore_core': _ignoreCoreUntilStopped,
+        });
+      }
     });
   }
 
@@ -194,6 +201,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       ConnectionFailure err,
     ) async {
       loggy.warning("error connecting", err);
+      if (tikNetMode) {
+        TikNetDiagnosticLog.e('vpn', 'connect failed', {'error': err.toString()});
+      }
       //Go err is not normal object to see the go errors are string and need to be dumped
       await ref
           .read(dialogNotifierProvider.notifier)
@@ -225,6 +235,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           await _disconnectCore().timeout(const Duration(seconds: 12));
         } on TimeoutException {
           loggy.warning("disconnect timed out, forcing stop");
+          if (tikNetMode) TikNetDiagnosticLog.w('vpn', 'disconnect timeout, force stop');
           await _forceStopCore();
           state = const AsyncData(Disconnected());
         }

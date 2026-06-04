@@ -6,6 +6,9 @@ import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import 'package:hiddify/core/model/tiknet_config.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
+
 import 'config_service.dart';
 
 /// Thrown when login fails (validation or API error). [message] is user-facing (e.g. Persian).
@@ -70,12 +73,23 @@ class AuthService {
       await _ref.read(Preferences.tikNetTokenExpiresAt.notifier).update(expiresAt);
       await _ref.read(Preferences.tikNetSubscriptionUrl.notifier).update(subscriptionUrl ?? '');
       await _ref.read(Preferences.tikNetSavedUsername.notifier).update(username.trim());
+      if (tikNetMode) {
+        TikNetDiagnosticLog.i('auth', 'login ok', {
+          'panel': baseUrl,
+          'user': username.trim(),
+          'has_sub_url': (subscriptionUrl ?? '').isNotEmpty,
+        });
+      }
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode;
       final message = _messageForStatus(statusCode, e.type);
+      if (tikNetMode) {
+        TikNetDiagnosticLog.w('auth', 'login failed', {'status': statusCode, 'type': type.name});
+      }
       throw AuthException(message);
     } catch (e) {
       if (e is AuthException) rethrow;
+      if (tikNetMode) TikNetDiagnosticLog.e('auth', 'login error', {'error': e.toString()});
       throw AuthException('اتصال به سرور ممکن نیست');
     }
   }

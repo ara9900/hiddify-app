@@ -18,6 +18,8 @@ import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
 
 /// Thrown when sync fails due to 401 (token expired). Caller should redirect to login.
@@ -79,6 +81,12 @@ class SyncService {
 
       await auth.extendSession();
       unawaited(_ref.read(tikNetDeviceServiceProvider).registerIfLoggedIn());
+      if (tikNetMode) {
+        TikNetDiagnosticLog.i('sync', 'syncAll ok', {
+          'profile_id': _ref.read(Preferences.tikNetProfileId),
+          'sub_url_len': _ref.read(Preferences.tikNetSubscriptionUrl).length,
+        });
+      }
       return true;
     } on DioException catch (e) {
       if (e.response?.statusCode == 401 && await auth.clearSessionIfUnauthorized()) {

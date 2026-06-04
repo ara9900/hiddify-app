@@ -23,6 +23,7 @@ import 'package:hiddify/features/log/data/log_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/system_tray/notifier/system_tray_notifier.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_session_guard.dart';
 import 'package:hiddify/features/window/notifier/window_notifier.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
@@ -74,6 +75,10 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
   });
 
   if (tikNetMode) {
+    await _init("tiknet diagnostic log", () async {
+      final dirs = await container.read(appDirectoriesProvider.future);
+      TikNetDiagnosticLog.init(dirs.workingDir);
+    });
     await _init("tiknet session", () => reconcileTikNetSession(container));
   }
 

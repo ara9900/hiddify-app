@@ -5,6 +5,7 @@ import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/tiknet/help/tiknet_faq_page.dart';
+import 'package:hiddify/features/tiknet/user_info/tiknet_diagnostic_page.dart';
 import 'package:hiddify/features/tiknet/inbox/tiknet_notifications_page.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/user_info/tiknet_logout_dialog.dart';
@@ -195,6 +196,17 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
             },
             icon: const Icon(Icons.help_outline_rounded),
             label: const Text('راهنما و سوالات'),
+            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+          ),
+          const Gap(12),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const TikNetDiagnosticPage()),
+              );
+            },
+            icon: const Icon(Icons.article_outlined),
+            label: const Text('گزارش تشخیصی (لاگ)'),
             style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
           ),
           const Gap(12),
