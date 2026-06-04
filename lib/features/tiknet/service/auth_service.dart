@@ -84,7 +84,7 @@ class AuthService {
       final statusCode = e.response?.statusCode;
       final message = _messageForStatus(statusCode, e.type);
       if (tikNetMode) {
-        TikNetDiagnosticLog.w('auth', 'login failed', {'status': statusCode, 'type': type.name});
+        TikNetDiagnosticLog.w('auth', 'login failed', {'status': statusCode, 'type': e.type.name});
       }
       throw AuthException(message);
     } catch (e) {
