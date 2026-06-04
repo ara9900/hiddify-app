@@ -98,7 +98,9 @@ class TikNetServerPickerSheet extends ConsumerWidget {
             data: (catalog) {
               final personalState = personalAsync.valueOrNull;
               final personalCatalog = personalState?.catalog;
-              final nodePings = personalState?.nodePings ?? const {};
+              final nodePings = vpnConnected
+                  ? (pingAsync.valueOrNull ?? personalState?.nodePings ?? const {})
+                  : const {};
               final personalOnly = catalog.displayMode == TikNetServerDisplayMode.personalOnly;
               final groups = catalog.groupedByTier();
               const tierOrder = ['free', 'normal', 'vip'];
@@ -424,6 +426,7 @@ class TikNetServerSelectorCard extends ConsumerWidget {
         onTap: () {
           ref.invalidate(serverCatalogProvider);
           ref.invalidate(personalOutboundProvider);
+          ref.invalidate(personalNodePingsProvider);
           TikNetServerPickerSheet.show(context);
         },
         child: Ink(

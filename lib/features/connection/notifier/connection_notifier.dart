@@ -13,6 +13,7 @@ import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
+import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -26,6 +27,9 @@ part 'connection_notifier.g.dart';
 
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
+  /// While true, UI stays on disconnecting until core reports stopped (avoids CONNECTING loop).
+  bool _ignoreCoreUntilStopped = false;
+
   @override
   Stream<ConnectionStatus> build() async* {
     if (Platform.isIOS) {
@@ -59,12 +63,50 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     });
     ref.watch(coreRestartSignalProvider);
 
-    yield* _connectionRepo.watchConnectionStatus().doOnData((event) {
+    if (Platform.isAndroid && tikNetMode) {
+      Future.microtask(() async {
+        if (!ref.read(Preferences.startedByUser)) {
+          await _forceStopCore();
+        }
+      });
+    }
+
+    yield* _connectionRepo.watchConnectionStatus().map(_mapStatusFromCore).doOnData((event) {
+      if (event case Disconnected()) {
+        _ignoreCoreUntilStopped = false;
+      }
       if (event case Disconnected(connectionFailure: final _?) when PlatformUtils.isDesktop) {
         ref.read(Preferences.startedByUser.notifier).update(false);
       }
       loggy.info("connection status: ${event.format()}");
     });
+  }
+
+  ConnectionStatus _mapStatusFromCore(ConnectionStatus event) {
+    if (_ignoreCoreUntilStopped) {
+      return switch (event) {
+        Disconnected() => event,
+        _ => const Disconnecting(),
+      };
+    }
+    if (!ref.read(Preferences.startedByUser)) {
+      return switch (event) {
+        Connected() || Connecting() || Disconnecting() => () {
+          unawaited(_forceStopCore());
+          return const Disconnected();
+        }(),
+        _ => event,
+      };
+    }
+    return event;
+  }
+
+  Future<void> _forceStopCore() async {
+    try {
+      await ref.read(hiddifyCoreServiceProvider).stop().run();
+    } catch (e, st) {
+      loggy.warning("force stop core failed", e, st);
+    }
   }
 
   ConnectionRepository get _connectionRepo => ref.read(connectionRepositoryProvider);
@@ -84,6 +126,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       switch (value) {
         case Disconnected():
           await haptic.lightImpact();
+          _ignoreCoreUntilStopped = false;
           await ref.read(Preferences.startedByUser.notifier).update(true);
           await _connect();
         case Connected():
@@ -121,7 +164,6 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       switch (value) {
         case Connected() || Connecting() || Disconnecting():
           loggy.debug("aborting connection");
-          await ref.read(Preferences.startedByUser.notifier).update(false);
           await _disconnect();
         default:
       }
@@ -173,18 +215,24 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   Future<void> _disconnect() async {
+    _ignoreCoreUntilStopped = true;
+    await ref.read(Preferences.startedByUser.notifier).update(false);
+    state = const AsyncData(Disconnecting());
+
     await _disconnectLock.run(
       () async {
         try {
-          await _disconnectCore().timeout(const Duration(seconds: 20));
+          await _disconnectCore().timeout(const Duration(seconds: 12));
         } on TimeoutException {
-          loggy.warning("disconnect timed out, forcing disconnected UI");
-          await ref.read(Preferences.startedByUser.notifier).update(false);
+          loggy.warning("disconnect timed out, forcing stop");
+          await _forceStopCore();
           state = const AsyncData(Disconnected());
         }
       },
       onIgnored: () {
-        loggy.debug("disconnect called while another disconnect is still running, ignoring");
+        loggy.debug("disconnect already running, forcing stop");
+        unawaited(_forceStopCore());
+        state = const AsyncData(Disconnected());
       },
     );
   }
@@ -209,9 +257,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       return;
     }
 
-    // If core status stream is delayed/stuck, keep UI consistent.
-    await ref.read(Preferences.startedByUser.notifier).update(false);
     state = const AsyncData(Disconnected());
+    _ignoreCoreUntilStopped = false;
   }
 }
 

@@ -48,7 +48,7 @@ class TikNetClientPingService {
           .urlTest(groupTag)
           .getOrElse((_) => unit)
           .run()
-          .timeout(const Duration(seconds: 45));
+          .timeout(const Duration(seconds: 10));
     } on TimeoutException {
       return const {};
     } catch (_) {

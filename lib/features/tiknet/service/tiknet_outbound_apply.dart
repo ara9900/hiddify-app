@@ -7,7 +7,6 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
-import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 ConnectionStatus? _connectionStatus(dynamic ref) {
@@ -25,13 +24,8 @@ Future<void> applyTikNetPersonalOutboundSelection(dynamic ref) async {
   if (_connectionStatus(ref) is! Connected) return;
 
   if (selection.personalKind == TikNetPersonalPickKind.defaultAuto) {
-    final catalog = ref.read(personalOutboundProvider).valueOrNull?.catalog;
-    final group = catalog?.mainGroupTag ?? 'Select';
-    final auto = catalog?.autoModes
-            .where((m) => m.kind == TikNetPersonalPickKind.urltest)
-            .map((m) => m.tag)
-            .firstOrNull ??
-        'Auto';
+    const group = 'Select';
+    const auto = 'Auto';
     await ref
         .read(proxyRepositoryProvider)
         .selectProxy(group, auto)
@@ -46,7 +40,7 @@ Future<void> applyTikNetPersonalOutboundSelection(dynamic ref) async {
   var groupTag = (selection.personalGroupTag ?? '').trim();
   final outboundTag = (selection.personalTag ?? '').trim();
   if (groupTag.isEmpty) {
-    groupTag = ref.read(personalOutboundProvider).valueOrNull?.catalog?.mainGroupTag ?? 'Select';
+    groupTag = 'Select';
   }
   if (groupTag.isEmpty || outboundTag.isEmpty) return;
 
