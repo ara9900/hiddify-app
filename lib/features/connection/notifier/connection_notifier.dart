@@ -43,7 +43,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       if (previous == next) return;
       if (tikNetMode) {
         // Avoid false "reconnect" haptic when resuming app (brief status flicker).
-        if (previous case AsyncData(value: Connecting()) when next case AsyncData(value: Connected())) {
+        final freshConnect = switch ((previous, next)) {
+          (AsyncData(value: Connecting()), AsyncData(value: Connected())) => true,
+          _ => false,
+        };
+        if (freshConnect) {
           await ref.read(hapticServiceProvider.notifier).heavyImpact();
         }
         return;
