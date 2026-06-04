@@ -33,7 +33,8 @@ class PerAppProxyPage extends HookConsumerWidget with PresLogger {
     return PkgFlag.userSelection.check(flag) && PkgFlag.checkboxValue(flag) == true;
   }
 
-  int _getPriority(AppPackageInfo app, Map<String, int> selected) {
+  /// Sort order for TikNet app filter (manual ON first).
+  static int sortPriority(AppPackageInfo app, Map<String, int> selected) {
     final flag = selected[app.packageName];
     if (flag == null) return 5;
     if (PkgFlag.userSelection.check(flag) && PkgFlag.checkboxValue(flag) == true) return 0;
@@ -42,6 +43,8 @@ class PerAppProxyPage extends HookConsumerWidget with PresLogger {
     if (PkgFlag.forceDeselection.check(flag)) return 3;
     return 4;
   }
+
+  int _getPriority(AppPackageInfo app, Map<String, int> selected) => sortPriority(app, selected);
 
   Future<Set<AppPackageInfo>> getApps(bool hideSystem) async {
     if (!PlatformUtils.isAndroid) return {};

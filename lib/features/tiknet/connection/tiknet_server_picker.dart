@@ -7,6 +7,7 @@ import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_country_flag.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
@@ -52,6 +53,10 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     final selected = ref.watch(selectedServerProvider);
     final sync = ref.read(syncServiceProvider);
     final vpnConnected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
+    final pingsAsync = ref.watch(tikNetNodePingsProvider);
+    final nodePings = pingsAsync.valueOrNull ?? const {};
+    final measuringPing = pingsAsync.isLoading;
+    final personalHasNodes = personalAsync.valueOrNull?.catalog?.nodes.isNotEmpty == true;
 
     return Column(
       children: [
@@ -75,12 +80,28 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                     Text('انتخاب سرور', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                     const Gap(4),
                     Text(
-                      vpnConnected ? 'VPN متصل است — تغییر سرور اتصال را قطع می‌کند' : 'سرور مورد نظر را انتخاب کنید',
+                      vpnConnected
+                          ? 'برای پینگ واقعی (HTTP) دکمه ⚡ را بزنید'
+                          : 'برای پینگ کانفیگ‌ها ابتدا VPN را وصل کنید',
                       style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
                     ),
                   ],
                 ),
               ),
+              if (personalHasNodes)
+                IconButton(
+                  onPressed: (!vpnConnected || measuringPing)
+                      ? null
+                      : () => ref.read(tikNetNodePingsProvider.notifier).measure(),
+                  tooltip: 'پینگ واقعی کانفیگ‌ها',
+                  icon: measuringPing
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.speed_rounded),
+                ),
               IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
             ],
           ),
@@ -98,7 +119,6 @@ class TikNetServerPickerSheet extends ConsumerWidget {
             data: (catalog) {
               final personalState = personalAsync.valueOrNull;
               final personalCatalog = personalState?.catalog;
-              final nodePings = personalState?.nodePings ?? const {};
               final personalOnly = catalog.displayMode == TikNetServerDisplayMode.personalOnly;
               final groups = catalog.groupedByTier();
               const tierOrder = ['free', 'normal', 'vip'];
@@ -409,11 +429,12 @@ class TikNetServerSelectorCard extends ConsumerWidget {
     final selected = ref.watch(selectedServerProvider);
     final catalog = ref.watch(serverCatalogProvider).valueOrNull;
     final personalNodes = ref.watch(personalOutboundProvider).valueOrNull;
+    final nodePings = ref.watch(tikNetNodePingsProvider).valueOrNull;
     final info = resolveSelectedServerInfo(
       selected: selected,
       catalog: catalog,
       personalCatalog: personalNodes?.catalog,
-      personalNodePings: personalNodes?.nodePings,
+      personalNodePings: nodePings,
     );
     final vpnConnected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
 

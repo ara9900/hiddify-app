@@ -6,7 +6,6 @@ import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class TikNetPersonalNodesState {
@@ -135,20 +134,6 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
     );
   }
 
-  // Ping via urltest runs only on-demand (picker refresh) to avoid ANR on main isolate.
+  // Ping: on-demand via [tikNetNodePingsProvider] when VPN is connected (HTTP urltest).
   return TikNetPersonalNodesState(catalog: resolved, nodePings: const {}, parseHint: hint);
-});
-
-/// Optional urltest delays; invalidate from server picker when VPN is connected.
-final personalNodePingsProvider = FutureProvider<Map<String, TikNetClientPingResult>>((ref) async {
-  final catalog = ref.watch(personalOutboundProvider).valueOrNull?.catalog;
-  if (catalog == null || catalog.nodes.isEmpty) return const {};
-  try {
-    return await ref
-        .read(tikNetClientPingServiceProvider)
-        .measureNodePingsFromCore(catalog)
-        .timeout(const Duration(seconds: 12));
-  } on TimeoutException {
-    return const {};
-  }
 });

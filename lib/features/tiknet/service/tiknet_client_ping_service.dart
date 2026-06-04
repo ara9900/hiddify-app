@@ -8,6 +8,19 @@ import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+/// Best sing-box group tag for urltest (selector or dedicated url-test group).
+String urlTestGroupTagForCatalog(TikNetPersonalOutboundCatalog catalog) {
+  for (final mode in catalog.autoModes) {
+    if (mode.kind == TikNetPersonalPickKind.urltest && mode.tag.trim().isNotEmpty) {
+      return mode.tag.trim();
+    }
+  }
+  final main = catalog.mainGroupTag.trim();
+  if (main.isNotEmpty) return main;
+  if (catalog.nodes.isNotEmpty) return catalog.nodes.first.groupTag.trim();
+  return '';
+}
+
 /// Latency via sing-box urltest (same as Hiddify proxy list). Requires VPN core running.
 class TikNetClientPingService {
   TikNetClientPingService(this._ref);
@@ -39,7 +52,7 @@ class TikNetClientPingService {
     final running = await _ref.read(serviceRunningProvider.future).catchError((_) => false);
     if (!running) return const {};
 
-    final groupTag = catalog.mainGroupTag.trim();
+    final groupTag = urlTestGroupTagForCatalog(catalog);
     if (groupTag.isEmpty) return const {};
 
     try {

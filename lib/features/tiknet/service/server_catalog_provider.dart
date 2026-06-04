@@ -4,6 +4,7 @@ import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_panel_ping_settings.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -30,6 +31,7 @@ final serverCatalogProvider = FutureProvider<TikNetServerCatalog>((ref) async {
         if (serverDisplay is Map) {
           await applyPanelServerDisplaySettings(ref, Map<String, dynamic>.from(serverDisplay));
         }
+        await applyPanelPingSettingsFromAppConfig(ref, appConfig);
         modeRaw = ref.read(Preferences.tikNetServerDisplayMode);
       } catch (_) {}
     }

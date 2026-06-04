@@ -15,6 +15,7 @@ import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
@@ -39,11 +40,12 @@ class TikNetConnectionPage extends HookConsumerWidget {
     final selected = ref.watch(selectedServerProvider);
     final catalog = ref.watch(serverCatalogProvider).valueOrNull;
     final personalNodes = ref.watch(personalOutboundProvider).valueOrNull;
+    final nodePings = ref.watch(tikNetNodePingsProvider).valueOrNull;
     final serverInfo = resolveSelectedServerInfo(
       selected: selected,
       catalog: catalog,
       personalCatalog: personalNodes?.catalog,
-      personalNodePings: personalNodes?.nodePings,
+      personalNodePings: nodePings,
     );
 
     final subscriptionExpired = () {

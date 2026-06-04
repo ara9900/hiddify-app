@@ -20,6 +20,7 @@ import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_panel_ping_settings.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
 
 /// Thrown when sync fails due to 401 (token expired). Caller should redirect to login.
@@ -75,6 +76,7 @@ class SyncService {
         if (serverDisplay is Map) {
           await applyPanelServerDisplaySettings(_ref, Map<String, dynamic>.from(serverDisplay));
         }
+        await applyPanelPingSettingsFromAppConfig(_ref, appConfig);
       } catch (_) {
         // app-config is best-effort; sync profile/config still succeeded
       }

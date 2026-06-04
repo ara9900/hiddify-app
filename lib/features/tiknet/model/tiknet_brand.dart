@@ -6,6 +6,7 @@ class TikNetBrand {
     this.primaryColor,
     this.supportTelegram,
     this.apiBaseUrl,
+    this.pingTestUrl,
   });
 
   final String? name;
@@ -13,6 +14,8 @@ class TikNetBrand {
   final String? primaryColor;
   final String? supportTelegram;
   final String? apiBaseUrl;
+  /// HTTP urltest probe URL (panel / brand); applied to Hiddify connection-test-url.
+  final String? pingTestUrl;
 
   factory TikNetBrand.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const TikNetBrand();
@@ -22,6 +25,7 @@ class TikNetBrand {
       primaryColor: (json['primary_color'] as String?)?.trim(),
       supportTelegram: (json['support_telegram'] as String?)?.trim(),
       apiBaseUrl: (json['api_base_url'] as String?)?.trim(),
+      pingTestUrl: (json['ping_test_url'] as String?)?.trim(),
     );
   }
 
