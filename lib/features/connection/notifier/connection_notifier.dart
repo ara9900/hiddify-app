@@ -150,7 +150,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   /// After app reopen / resume when user had VPN enabled.
   Future<void> restoreVpnSessionIfNeeded() async {
     if (!tikNetMode || !ref.read(Preferences.startedByUser)) return;
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    await Future<void>.delayed(const Duration(milliseconds: 2000));
     if (!ref.read(Preferences.startedByUser)) return;
     if (state case AsyncData(:final value)) {
       if (value is Connected || value is Connecting) return;
@@ -202,12 +202,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     }
   }
 
-  Future<void> abortConnection() async {
+  Future<void> abortConnection({bool preserveUserIntent = false}) async {
     if (state case AsyncData(:final value)) {
       switch (value) {
         case Connected() || Connecting() || Disconnecting():
           loggy.debug("aborting connection");
-          await _disconnect();
+          await _disconnect(preserveUserIntent: preserveUserIntent);
         default:
       }
     }
@@ -260,11 +260,13 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     }).run();
   }
 
-  Future<void> _disconnect() async {
+  Future<void> _disconnect({bool preserveUserIntent = false}) async {
     _ignoreCoreUntilStopped = true;
-    await ref.read(Preferences.startedByUser.notifier).update(false);
-    if (tikNetMode) {
-      await ref.read(Preferences.tikNetVpnConnectedAt.notifier).update(null);
+    if (!preserveUserIntent) {
+      await ref.read(Preferences.startedByUser.notifier).update(false);
+      if (tikNetMode) {
+        await ref.read(Preferences.tikNetVpnConnectedAt.notifier).update(null);
+      }
     }
     state = const AsyncData(Disconnecting());
 

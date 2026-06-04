@@ -183,9 +183,17 @@ class SyncService {
   Future<bool> _applyRemoteSubscriptionProfile(String subUrl) async {
     final repo = await _ref.read(profileRepositoryProvider.future);
     final userOverride = UserOverride(name: tikNetProfileDisplayName);
-    await _abortVpnIfNeeded();
 
     var existing = await _findTikNetProfile(repo);
+    if (existing is RemoteProfileEntity && existing.url.trim() == subUrl.trim()) {
+      await _ref.read(Preferences.tikNetProfileId.notifier).update(existing.id);
+      await repo.setAsActive(existing.id).run();
+      _ref.invalidate(personalOutboundProvider);
+      return true;
+    }
+
+    await _abortVpnIfNeeded();
+
     if (existing != null && existing is! RemoteProfileEntity) {
       await repo.deleteById(existing.id, existing.active).run();
       existing = null;
@@ -215,7 +223,6 @@ class SyncService {
     final repo = await _ref.read(profileRepositoryProvider.future);
     final pathResolver = _ref.read(profilePathResolverProvider);
     final userOverride = UserOverride(name: tikNetProfileDisplayName);
-    await _abortVpnIfNeeded();
 
     var existing = await _findTikNetProfile(repo);
 
@@ -225,6 +232,8 @@ class SyncService {
       _ref.invalidate(personalOutboundProvider);
       return true;
     }
+
+    await _abortVpnIfNeeded();
 
     if (existing is RemoteProfileEntity) {
       await repo.deleteById(existing.id, existing.active).run();
@@ -258,8 +267,11 @@ class SyncService {
       _ => null,
     };
     if (connection is Connected || connection is Connecting || connection is Disconnecting) {
-      await _ref.read(connectionNotifierProvider.notifier).abortConnection();
-      await _ref.read(Preferences.startedByUser.notifier).update(false);
+      final preserveIntent = tikNetMode && _ref.read(Preferences.startedByUser);
+      await _ref.read(connectionNotifierProvider.notifier).abortConnection(preserveUserIntent: preserveIntent);
+      if (preserveIntent) {
+        unawaited(_ref.read(connectionNotifierProvider.notifier).restoreVpnSessionIfNeeded());
+      }
     }
   }
 

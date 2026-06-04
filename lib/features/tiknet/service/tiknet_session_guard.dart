@@ -41,7 +41,8 @@ Future<void> reconcileTikNetSession(ProviderContainer container) async {
   try {
     await container.read(tikNetApiProvider).getMe(baseUrl: baseUrl, accessToken: token);
     await auth.extendSession();
-    unawaited(container.read(syncServiceProvider).syncAllAndApplyProfile());
+    // syncAll applies profile; avoid syncAllAndApplyProfile doubling work. VPN kept if config unchanged.
+    unawaited(container.read(syncServiceProvider).syncAll());
   } on DioException catch (e) {
     if (e.response?.statusCode == 401) {
       await container.read(connectionNotifierProvider.notifier).abortConnection();
