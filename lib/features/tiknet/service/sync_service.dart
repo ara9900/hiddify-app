@@ -19,6 +19,7 @@ import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_network_defaults.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_network.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
 
@@ -79,6 +80,7 @@ class SyncService {
         if (serverDisplay is Map) {
           await applyPanelServerDisplaySettings(_ref, Map<String, dynamic>.from(serverDisplay));
         }
+        await ensureTikNetDnsFromProfile(_ref);
       } catch (_) {
         // app-config is best-effort; sync profile/config still succeeded
       }

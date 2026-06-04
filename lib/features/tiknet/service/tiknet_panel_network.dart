@@ -35,10 +35,18 @@ Future<bool> applyPanelNetworkSettings(dynamic ref, Map<String, dynamic>? networ
 
   var changed = false;
 
-  if (remoteRaw != null && remoteRaw.isNotEmpty && _allowedRemoteDns.contains(remoteRaw)) {
+  // TikNet: only apply safe DNS overrides. Panel DoH (Cloudflare/1.1.1.1) often breaks real
+  // traffic in IR while VPN UI still shows "connected" — keep sing-box profile DNS (local).
+  if (remoteRaw != null && remoteRaw.isNotEmpty && remoteRaw == 'local') {
     final current = ref.read(ConfigOptions.remoteDnsAddress);
     if (current != remoteRaw) {
       await ref.read(ConfigOptions.remoteDnsAddress.notifier).update(remoteRaw);
+      changed = true;
+    }
+  } else if (remoteRaw != null && remoteRaw.startsWith('https://')) {
+    final current = ref.read(ConfigOptions.remoteDnsAddress);
+    if (current != 'local') {
+      await ref.read(ConfigOptions.remoteDnsAddress.notifier).update('local');
       changed = true;
     }
   }

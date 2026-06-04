@@ -117,11 +117,13 @@ class TikNetClientPingService {
         return TikNetClientPingResult(
           state: TikNetClientPingState.reachable,
           pingMs: sw.elapsedMilliseconds,
+          tcpProbeOnly: true,
         );
       } catch (_) {
         return const TikNetClientPingResult(
           state: TikNetClientPingState.unreachable,
           pingMs: -1,
+          tcpProbeOnly: true,
         );
       }
     }
