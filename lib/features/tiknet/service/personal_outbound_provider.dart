@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
@@ -22,6 +23,7 @@ class TikNetPersonalNodesState {
 }
 
 final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) async {
+  ref.watch(connectionNotifierProvider);
   ref.watch(Preferences.tikNetCachedConfig);
   ref.watch(Preferences.tikNetProfileId);
 
@@ -139,8 +141,8 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
   try {
     pings = await ref
         .read(tikNetClientPingServiceProvider)
-        .measureNodePings(resolved.nodes, fast: true)
-        .timeout(const Duration(seconds: 14));
+        .measureNodePingsFromCore(resolved)
+        .timeout(const Duration(seconds: 50));
   } on TimeoutException {
     pings = const {};
   }

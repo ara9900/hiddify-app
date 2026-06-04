@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:hiddify/core/haptic/haptic_service.dart';
@@ -86,12 +87,13 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           await ref.read(Preferences.startedByUser.notifier).update(true);
           await _connect();
         case Connected():
-          // default:
           await haptic.mediumImpact();
           await ref.read(Preferences.startedByUser.notifier).update(false);
           await _disconnect();
-        default:
-          loggy.warning("switching status, debounce");
+        case Connecting() || Disconnecting():
+          await haptic.mediumImpact();
+          await ref.read(Preferences.startedByUser.notifier).update(false);
+          await _disconnect();
       }
     }
   }
@@ -117,23 +119,25 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   Future<void> abortConnection() async {
     if (state case AsyncData(:final value)) {
       switch (value) {
-        case Connected() || Connecting():
+        case Connected() || Connecting() || Disconnecting():
           loggy.debug("aborting connection");
+          await ref.read(Preferences.startedByUser.notifier).update(false);
           await _disconnect();
         default:
       }
     }
   }
 
-  final _singleStart = SingleCall();
+  final _connectLock = SingleCall();
+  final _disconnectLock = SingleCall();
 
   Future<void> _connect() async {
-    _singleStart.run(
+    await _connectLock.run(
       () async {
         await _connectThrottled();
       },
       onIgnored: () {
-        loggy.debug("connect called while another connect/disconnect is still running, ignoring");
+        loggy.debug("connect called while another connect is still running, ignoring");
       },
     );
   }
@@ -169,6 +173,23 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   Future<void> _disconnect() async {
+    await _disconnectLock.run(
+      () async {
+        try {
+          await _disconnectCore().timeout(const Duration(seconds: 20));
+        } on TimeoutException {
+          loggy.warning("disconnect timed out, forcing disconnected UI");
+          await ref.read(Preferences.startedByUser.notifier).update(false);
+          state = const AsyncData(Disconnected());
+        }
+      },
+      onIgnored: () {
+        loggy.debug("disconnect called while another disconnect is still running, ignoring");
+      },
+    );
+  }
+
+  Future<void> _disconnectCore() async {
     final either = await _connectionRepo.disconnect().run();
     ConnectionFailure? disconnectErr;
     either.match(

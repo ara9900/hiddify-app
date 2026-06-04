@@ -15,14 +15,10 @@ class TikNetClientPingResult {
   const TikNetClientPingResult({
     required this.state,
     this.pingMs,
-    this.tcpProbeOnly = false,
   });
 
   final TikNetClientPingState state;
   final int? pingMs;
-
-  /// True when [pingMs] is only a direct TCP check to the server host — not VPN path latency.
-  final bool tcpProbeOnly;
 
   bool get reachable => state == TikNetClientPingState.reachable;
 
@@ -30,7 +26,6 @@ class TikNetClientPingResult {
     return switch (state) {
       TikNetClientPingState.measuring => '…',
       TikNetClientPingState.noTarget => '—',
-      TikNetClientPingState.reachable when tcpProbeOnly => 'TCP باز',
       TikNetClientPingState.reachable when pingMs != null && pingMs! > 0 => '$pingMs ms',
       TikNetClientPingState.reachable => 'در دسترس',
       TikNetClientPingState.unreachable => 'قطع',
@@ -42,7 +37,6 @@ class TikNetClientPingResult {
       TikNetClientPingState.measuring => const Color(0xFF9E9E9E),
       TikNetClientPingState.noTarget => const Color(0xFF9E9E9E),
       TikNetClientPingState.unreachable => const Color(0xFFEF4444),
-      TikNetClientPingState.reachable when tcpProbeOnly => const Color(0xFF9E9E9E),
       TikNetClientPingState.reachable => _latencyColor(pingMs ?? 0),
     };
   }

@@ -50,12 +50,7 @@ final serverCatalogProvider = FutureProvider<TikNetServerCatalog>((ref) async {
       personalPing: catalog.personalPing,
       displayMode: mode,
     );
-    final subUrl = ref.read(Preferences.tikNetSubscriptionUrl);
-    final ping = ref.read(tikNetClientPingServiceProvider);
-    return ping.measureCatalog(
-      catalog,
-      personalSubscriptionUrl: subUrl,
-    );
+    return ref.read(tikNetClientPingServiceProvider).catalogWithoutClientPing(catalog);
   } catch (_) {
     return const TikNetServerCatalog(personalAvailable: false, servers: []);
   }

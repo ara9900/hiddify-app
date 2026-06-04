@@ -6,14 +6,17 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// Live connection duration while VPN is connected.
 final tiknetConnectionUptimeProvider = StreamProvider<String?>((ref) async* {
   ref.watch(connectionNotifierProvider);
-  final isConnected = ref.read(connectionNotifierProvider).valueOrNull is Connected;
-  if (!isConnected) {
+  bool connected() => switch (ref.read(connectionNotifierProvider)) {
+        AsyncData<ConnectionStatus>(value: Connected()) => true,
+        _ => false,
+      };
+  if (!connected()) {
     yield null;
     return;
   }
 
   final start = DateTime.now();
-  while (ref.read(connectionNotifierProvider).valueOrNull is Connected) {
+  while (connected()) {
     final elapsed = DateTime.now().difference(start);
     final h = elapsed.inHours;
     final m = elapsed.inMinutes.remainder(60);

@@ -18,9 +18,6 @@ import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_network_defaults.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_panel_network.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
 
 /// Thrown when sync fails due to 401 (token expired). Caller should redirect to login.
@@ -72,15 +69,10 @@ class SyncService {
 
       try {
         final appConfig = await api.getAppConfig(baseUrl: baseUrl, accessToken: token);
-        final network = appConfig['network'];
-        if (network is Map) {
-          await applyPanelNetworkSettings(_ref, Map<String, dynamic>.from(network));
-        }
         final serverDisplay = appConfig['server_display'];
         if (serverDisplay is Map) {
           await applyPanelServerDisplaySettings(_ref, Map<String, dynamic>.from(serverDisplay));
         }
-        await ensureTikNetDnsFromProfile(_ref);
       } catch (_) {
         // app-config is best-effort; sync profile/config still succeeded
       }
@@ -208,7 +200,6 @@ class SyncService {
     await _ref.read(Preferences.tikNetProfileId.notifier).update(profileId);
     await repo.setAsActive(profileId).run();
     _ref.invalidate(personalOutboundProvider);
-    await applyTikNetPersonalOutboundSelection(_ref);
     return true;
   }
 
@@ -250,12 +241,14 @@ class SyncService {
     await _ref.read(Preferences.tikNetProfileId.notifier).update(profileId);
     await repo.setAsActive(profileId).run();
     _ref.invalidate(personalOutboundProvider);
-    await applyTikNetPersonalOutboundSelection(_ref);
     return true;
   }
 
   Future<void> _abortVpnIfNeeded() async {
-    final connection = _ref.read(connectionNotifierProvider).valueOrNull;
+    final connection = switch (_ref.read(connectionNotifierProvider)) {
+      AsyncData<ConnectionStatus>(value: final status) => status,
+      _ => null,
+    };
     if (connection is Connected || connection is Connecting || connection is Disconnecting) {
       await _ref.read(connectionNotifierProvider.notifier).abortConnection();
       await _ref.read(Preferences.startedByUser.notifier).update(false);

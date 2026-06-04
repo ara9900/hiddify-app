@@ -17,7 +17,6 @@ import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_network_defaults.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_app_version_label.dart';
@@ -93,10 +92,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
       _ => 'برای اتصال، دکمه پایین را بزنید',
     };
 
-    final enabled = switch (connectionStatus) {
-      AsyncData(value: Connected()) || AsyncData(value: Disconnected()) || AsyncError() => true,
-      _ => false,
-    };
+    final enabled = !subscriptionExpired;
 
     ref.listen(connectionNotifierProvider, (prev, next) {
       final wasConnected = prev?.valueOrNull is Connected;
@@ -165,8 +161,12 @@ class TikNetConnectionPage extends HookConsumerWidget {
                             requiresReconnect: requiresReconnect,
                             enabled: enabled && !subscriptionExpired,
                             onTap: () async {
-                              final dnsFixed = await ensureTikNetDnsFromProfile(ref);
-                              if (dnsFixed && ref.read(connectionNotifierProvider).valueOrNull is Connected) {
+                              if (isConnecting || isDisconnecting) {
+                                await ref.read(connectionNotifierProvider.notifier).abortConnection();
+                                return;
+                              }
+                              if (requiresReconnect == true &&
+                                  ref.read(connectionNotifierProvider).valueOrNull is Connected) {
                                 await ref.read(connectionNotifierProvider.notifier).reconnect(
                                   ref.read(activeProfileProvider).valueOrNull,
                                 );
@@ -207,7 +207,11 @@ class TikNetConnectionPage extends HookConsumerWidget {
                       const Gap(8),
                       Center(
                         child: Text(
-                          isConnected ? 'برای قطع اتصال بزنید' : 'برای اتصال به سرور انتخابی بزنید',
+                          isConnecting || isDisconnecting
+                              ? 'برای لغو، دوباره دکمه را بزنید'
+                              : isConnected
+                                  ? 'برای قطع اتصال بزنید'
+                                  : 'برای اتصال به سرور انتخابی بزنید',
                           style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
                         ),
                       ),
@@ -482,7 +486,7 @@ class _TikNetConnectButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: enabled && !isBusy ? onTap : null,
+        onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(80),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 250),
