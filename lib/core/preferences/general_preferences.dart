@@ -159,6 +159,14 @@ abstract class Preferences {
 
   /// TikNet: stable device UUID for panel device registry
   static final tikNetDeviceId = PreferencesNotifier.create<String, String>("tiknet_device_id", "");
+
+  /// TikNet: when current VPN session became connected (persists across app switch).
+  static final tikNetVpnConnectedAt = PreferencesNotifier.create<DateTime?, String>(
+    "tiknet_vpn_connected_at",
+    null,
+    mapFrom: (value) => value == null || value.isEmpty ? null : DateTime.tryParse(value),
+    mapTo: (value) => value?.toIso8601String() ?? '',
+  );
 }
 
 @Riverpod(keepAlive: true)

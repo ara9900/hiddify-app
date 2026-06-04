@@ -1,21 +1,26 @@
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Live connection duration while VPN is connected.
+/// Live VPN session duration (persists across app switch while tunnel stays up).
 final tiknetConnectionUptimeProvider = StreamProvider<String?>((ref) async* {
   ref.watch(connectionNotifierProvider);
+  final startedAt = ref.watch(Preferences.tikNetVpnConnectedAt);
+
   bool connected() => switch (ref.read(connectionNotifierProvider)) {
         AsyncData<ConnectionStatus>(value: Connected()) => true,
         _ => false,
       };
+
   if (!connected()) {
     yield null;
     return;
   }
 
-  final start = DateTime.now();
+  final start = startedAt ?? DateTime.now();
+
   while (connected()) {
     final elapsed = DateTime.now().difference(start);
     final h = elapsed.inHours;

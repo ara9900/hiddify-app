@@ -41,6 +41,13 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
 
     listenSelf((previous, next) async {
       if (previous == next) return;
+      if (tikNetMode) {
+        // Avoid false "reconnect" haptic when resuming app (brief status flicker).
+        if (previous case AsyncData(value: Connecting()) when next case AsyncData(value: Connected())) {
+          await ref.read(hapticServiceProvider.notifier).heavyImpact();
+        }
+        return;
+      }
       if (previous case AsyncData(:final value) when !value.isConnected) {
         if (next case AsyncData(value: final Connected _)) {
           await ref.read(hapticServiceProvider.notifier).heavyImpact();
@@ -72,9 +79,19 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       });
     }
 
-    yield* _connectionRepo.watchConnectionStatus().map(_mapStatusFromCore).doOnData((event) {
+    yield* _connectionRepo.watchConnectionStatus().map(_mapStatusFromCore).doOnData((event) async {
       if (event case Disconnected()) {
         _ignoreCoreUntilStopped = false;
+      }
+      if (tikNetMode) {
+        final started = ref.read(Preferences.startedByUser);
+        if (event is Connected && started) {
+          if (ref.read(Preferences.tikNetVpnConnectedAt) == null) {
+            await ref.read(Preferences.tikNetVpnConnectedAt.notifier).update(DateTime.now());
+          }
+        } else if (event is Disconnected && !started) {
+          await ref.read(Preferences.tikNetVpnConnectedAt.notifier).update(null);
+        }
       }
       if (event case Disconnected(connectionFailure: final _?) when PlatformUtils.isDesktop) {
         ref.read(Preferences.startedByUser.notifier).update(false);
@@ -227,6 +244,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   Future<void> _disconnect() async {
     _ignoreCoreUntilStopped = true;
     await ref.read(Preferences.startedByUser.notifier).update(false);
+    if (tikNetMode) {
+      await ref.read(Preferences.tikNetVpnConnectedAt.notifier).update(null);
+    }
     state = const AsyncData(Disconnecting());
 
     await _disconnectLock.run(
