@@ -14,6 +14,8 @@ import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/core/model/tiknet_config.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/tiknet/update/tiknet_app_update_overlay.dart';
 import 'package:hiddify/core/theme/app_theme.dart';
 import 'package:hiddify/core/theme/theme_preferences.dart';
@@ -43,15 +45,23 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
   void onPause(WidgetRef ref) {
     if (PlatformUtils.isDesktop) return;
     isOnPauseCalled = true;
+    // TikNet: keep foreground core channel while VPN is on (closeFront caused disconnect on return).
+    if (tikNetMode && ref.read(Preferences.startedByUser)) {
+      return;
+    }
     ref.read(hiddifyCoreServiceProvider).closeFront();
   }
 
   void onResume(WidgetRef ref) {
-    // if (PlatformUtils.isDesktop) return;
     ref.read(hiddifyCoreServiceProvider).init();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (isOnPauseCalled && PlatformUtils.isAndroid) ref.invalidate(perAppProxyServiceProvider);
+      if (isOnPauseCalled && PlatformUtils.isAndroid) {
+        ref.invalidate(perAppProxyServiceProvider);
+        if (tikNetMode && ref.read(Preferences.startedByUser)) {
+          unawaited(ref.read(connectionNotifierProvider.notifier).restoreVpnSessionIfNeeded());
+        }
+      }
       isOnPauseCalled = false;
     });
   }

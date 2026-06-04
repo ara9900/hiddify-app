@@ -79,7 +79,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       Future.microtask(() async {
         if (!ref.read(Preferences.startedByUser)) {
           await _forceStopCore();
+          return;
         }
+        await restoreVpnSessionIfNeeded();
       });
     }
 
@@ -143,6 +145,19 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (state case AsyncData(:final value)) {
       if (value case Disconnected()) return _connect();
     }
+  }
+
+  /// After app reopen / resume when user had VPN enabled.
+  Future<void> restoreVpnSessionIfNeeded() async {
+    if (!tikNetMode || !ref.read(Preferences.startedByUser)) return;
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (!ref.read(Preferences.startedByUser)) return;
+    if (state case AsyncData(:final value)) {
+      if (value is Connected || value is Connecting) return;
+    }
+    loggy.info("restoring VPN session after app resume");
+    if (tikNetMode) TikNetDiagnosticLog.i('vpn', 'auto-restore after app open');
+    await mayConnect();
   }
 
   Future<void> toggleConnection() async {
