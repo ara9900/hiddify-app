@@ -27,7 +27,7 @@ class TikNetClientPingService {
 
   final Ref _ref;
 
-  /// Panel catalog entries are not sing-box outbounds — skip HTTP/TCP probes.
+  /// Panel catalog list entries are not used for ping display anymore (merged outbounds use core urltest).
   TikNetServerCatalog catalogWithoutClientPing(TikNetServerCatalog catalog) {
     final servers = catalog.servers
         .map(

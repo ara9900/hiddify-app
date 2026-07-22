@@ -174,7 +174,10 @@ class AuthService {
     await _ref.read(Preferences.tikNetProfileId.notifier).update('');
     await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(null);
     await _ref.read(Preferences.tikNetSavedUsername.notifier).update('');
-    await _ref.read(Preferences.tikNetSelectedServer.notifier).update('personal');
+    await _ref.read(Preferences.tikNetSelectedServer.notifier).update('smart');
+    await _ref.read(Preferences.tikNetSmartLockedTag.notifier).update('');
+    await _ref.read(Preferences.tikNetSmartLockedGroup.notifier).update('');
+    await _ref.read(Preferences.tikNetNodeMetaJson.notifier).update('');
     await _ref.read(Preferences.tikNetCachedAnnouncement.notifier).update('');
 
     try {

@@ -315,7 +315,7 @@ packages:
     source: hosted
     version: "0.3.4+2"
   crypto:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: crypto
       sha256: "1e445881f28f22d6140f181e07737b22f1e099a5e1ff94b0af2f9e4a463f4855"
@@ -411,7 +411,7 @@ packages:
     source: hosted
     version: "3.2.4"
   dependency_validator:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: dependency_validator
       sha256: "3a243f5b9def5f902887a66fbea7e72e612eee956af6c8c34d382fe6d5484145"
@@ -717,7 +717,7 @@ packages:
     source: hosted
     version: "2.0.17"
   flutter_test:
-    dependency: transitive
+    dependency: "direct dev"
     description: flutter
     source: sdk
     version: "0.0.0"

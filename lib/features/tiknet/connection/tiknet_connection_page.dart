@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -13,11 +14,12 @@ import 'package:hiddify/features/tiknet/connection/tiknet_connection_uptime_prov
 import 'package:hiddify/features/tiknet/connection/tiknet_server_picker.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
-import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
+import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_app_version_label.dart';
@@ -41,11 +43,14 @@ class TikNetConnectionPage extends HookConsumerWidget {
     final catalog = ref.watch(serverCatalogProvider).valueOrNull;
     final personalNodes = ref.watch(personalOutboundProvider).valueOrNull;
     final nodePings = ref.watch(tikNetNodePingsProvider).valueOrNull;
+    final smartLocked = ref.watch(Preferences.tikNetSmartLockedTag);
+    final smartPicking = ref.watch(tikNetSmartPickingProvider);
     final serverInfo = resolveSelectedServerInfo(
       selected: selected,
       catalog: catalog,
       personalCatalog: personalNodes?.catalog,
       personalNodePings: nodePings,
+      smartLockedTag: smartLocked,
     );
 
     final subscriptionExpired = () {
@@ -69,6 +74,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
     final isDisconnecting = connectionStatus.valueOrNull is Disconnecting;
 
     final statusLabel = switch (connectionStatus) {
+      AsyncData(value: Connected()) when smartPicking => 'انتخاب بهترین کانفیگ…',
       AsyncData(value: Connected()) when requiresReconnect => 'نیاز به بروزرسانی',
       AsyncData(value: Connected()) => 'متصل به اینترنت',
       AsyncData(value: Connecting()) => 'در حال اتصال…',
@@ -76,11 +82,13 @@ class TikNetConnectionPage extends HookConsumerWidget {
       _ => 'قطع شده',
     };
     final statusColor = switch (connectionStatus) {
+      AsyncData(value: Connected()) when smartPicking => TikNetColors.connecting,
       AsyncData(value: Connected()) => TikNetColors.connected,
       AsyncData(value: Connecting()) || AsyncData(value: Disconnecting()) => TikNetColors.connecting,
       _ => TikNetColors.disconnected,
     };
     final statusHint = switch (connectionStatus) {
+      AsyncData(value: Connected()) when smartPicking => 'پینگ کانفیگ‌ها در حال اندازه‌گیری است',
       AsyncData(value: Connected()) => 'ترافیک شما از طریق VPN عبور می‌کند',
       AsyncData(value: Connecting()) => 'لطفاً چند ثانیه صبر کنید',
       AsyncData(value: Disconnecting()) => 'در حال قطع اتصال',
@@ -91,9 +99,14 @@ class TikNetConnectionPage extends HookConsumerWidget {
 
     ref.listen(connectionNotifierProvider, (prev, next) {
       final wasConnected = prev?.valueOrNull is Connected;
+      final isConnectedNow = next.valueOrNull is Connected;
       if (next case AsyncData(value: Connected()) when !wasConnected) {
         ref.read(tikNetTelemetryServiceProvider).send('connect_success');
         unawaited(applyTikNetPersonalOutboundSelection(ref));
+      } else if (wasConnected && !isConnectedNow) {
+        // Smart stick ends when user disconnects; next connect re-pings.
+        unawaited(clearTikNetSmartLockWidget(ref));
+        ref.read(tikNetSmartPickingProvider.notifier).state = false;
       } else if (next case AsyncError(:final error) when prev is! AsyncError) {
         ref.read(tikNetTelemetryServiceProvider).send(
           'connect_fail',

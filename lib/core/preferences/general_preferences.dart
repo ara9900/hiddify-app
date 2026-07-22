@@ -149,8 +149,14 @@ abstract class Preferences {
   );
   /// TikNet: آخرین پیام اعلان (JSON با message.show, message.type, message.text)
   static final tikNetCachedAnnouncement = PreferencesNotifier.create<String, String>("tiknet_cached_announcement", "");
-  /// TikNet: selected server — "personal" or catalog server id
-  static final tikNetSelectedServer = PreferencesNotifier.create<String, String>("tiknet_selected_server", "personal");
+  /// TikNet: selected config — "smart" | p:n:… | cat:{id}
+  static final tikNetSelectedServer = PreferencesNotifier.create<String, String>("tiknet_selected_server", "smart");
+  /// TikNet: outbound tag locked by smart connect for the current VPN session.
+  static final tikNetSmartLockedTag = PreferencesNotifier.create<String, String>("tiknet_smart_locked_tag", "");
+  /// TikNet: selector group for [tikNetSmartLockedTag].
+  static final tikNetSmartLockedGroup = PreferencesNotifier.create<String, String>("tiknet_smart_locked_group", "");
+  /// TikNet: JSON list of merged node metadata [{tag,label,source,catalogId}]
+  static final tikNetNodeMetaJson = PreferencesNotifier.create<String, String>("tiknet_node_meta_json", "");
   /// TikNet: panel server list mode — both | personal_only | catalog_only
   static final tikNetServerDisplayMode = PreferencesNotifier.create<String, String>(
     "tiknet_server_display_mode",

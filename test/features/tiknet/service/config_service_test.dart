@@ -30,7 +30,7 @@ void main() {
       final urls = await service.getPanelUrls();
 
       expect(urls, ['https://panel.from-github.test', 'https://backup.test']);
-      expect(prefs.getString(cacheKeyPanelUrls), configJson);
+      expect(prefs.getString(cacheKeyPanelUrls), jsonEncode(urls));
     });
 
     test('getPanelUrls falls back to panel config when GitHub fails', () async {
@@ -48,7 +48,7 @@ void main() {
       final urls = await service.getPanelUrls();
 
       expect(urls, ['https://panel.tikn.ir']);
-      expect(prefs.getString(cacheKeyPanelUrls), panelJson);
+      expect(prefs.getString(cacheKeyPanelUrls), jsonEncode(urls));
     });
 
     test('getPanelUrls returns cached URLs when all remote config fails', () async {

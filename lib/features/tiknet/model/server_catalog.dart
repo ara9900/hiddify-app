@@ -233,8 +233,30 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
   TikNetServerCatalog? catalog,
   TikNetPersonalOutboundCatalog? personalCatalog,
   Map<String, TikNetClientPingResult>? personalNodePings,
+  String? smartLockedTag,
 }) {
   if (selected.isPersonal && selected.catalogId == null) {
+    if (selected.personalKind == TikNetPersonalPickKind.smart ||
+        selected.personalKind == TikNetPersonalPickKind.defaultAuto) {
+      final locked = (smartLockedTag ?? '').trim();
+      if (locked.isNotEmpty) {
+        final node = personalCatalog?.nodes.where((n) => n.tag == locked).firstOrNull;
+        final ping = personalNodePings?[locked];
+        return TikNetSelectedServerInfo(
+          title: 'اتصال هوشمند',
+          subtitle: node != null ? 'متصل به ${node.label}' : 'بهترین کانفیگ بر اساس پینگ',
+          personal: true,
+          pingLabel: ping?.pingLabel,
+          pingColor: ping?.pingColor,
+          isUnreachableFromDevice: ping?.state == TikNetClientPingState.unreachable,
+        );
+      }
+      return const TikNetSelectedServerInfo(
+        title: 'اتصال هوشمند',
+        subtitle: 'پینگ همه کانفیگ‌ها → سریع‌ترین',
+        personal: true,
+      );
+    }
     if (selected.personalKind == TikNetPersonalPickKind.urltest ||
         selected.personalKind == TikNetPersonalPickKind.balancer) {
       final mode = personalCatalog?.autoModes
@@ -253,23 +275,33 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
         selected.personalTag!.isNotEmpty) {
       final node = personalCatalog?.nodes.where((n) => n.tag == selected.personalTag).firstOrNull;
       final ping = personalNodePings?[selected.personalTag!];
+      final sourceLabel = node?.isCatalog == true ? 'کاتالوگ' : 'اشتراک';
       return TikNetSelectedServerInfo(
         title: node?.label ?? selected.personalTag!,
-        subtitle: 'اشتراک اختصاصی',
+        subtitle: sourceLabel,
         personal: true,
         pingLabel: ping?.pingLabel,
         pingColor: ping?.pingColor,
         isUnreachableFromDevice: ping?.state == TikNetClientPingState.unreachable,
       );
     }
-    final personal = catalog?.personalPing;
-    return TikNetSelectedServerInfo(
-      title: 'اشتراک من',
-      subtitle: 'پیش‌فرض کانفیگ اشتراک',
+    return const TikNetSelectedServerInfo(
+      title: 'اتصال هوشمند',
+      subtitle: 'پینگ همه کانفیگ‌ها → سریع‌ترین',
       personal: true,
-      pingLabel: personal?.pingLabel,
-      pingColor: personal?.pingColor,
-      isUnreachableFromDevice: personal?.state == TikNetClientPingState.unreachable,
+    );
+  }
+  // Legacy cat:{id}: prefer merged-profile node, then panel catalog entry.
+  final merged = personalCatalog?.nodes.where((n) => n.catalogId == selected.catalogId).firstOrNull;
+  if (merged != null) {
+    final ping = personalNodePings?[merged.tag];
+    return TikNetSelectedServerInfo(
+      title: merged.label,
+      subtitle: 'کاتالوگ',
+      personal: true,
+      pingLabel: ping?.pingLabel,
+      pingColor: ping?.pingColor,
+      isUnreachableFromDevice: ping?.state == TikNetClientPingState.unreachable,
     );
   }
   TikNetServerEntry? match;
@@ -283,7 +315,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
     final parts = <String>[match.countryLabel, match.tierLabel].where((e) => e.isNotEmpty);
     return TikNetSelectedServerInfo(
       title: match.name,
-      subtitle: parts.join(' · '),
+      subtitle: parts.isEmpty ? 'کاتالوگ' : parts.join(' · '),
       countryCode: match.countryCode,
       pingLabel: match.pingLabel,
       pingColor: match.pingColor,
@@ -304,17 +336,31 @@ typedef TikNetServerSelection = ({
   String? personalGroupTag,
 });
 
-TikNetServerSelection personalDefaultSelection() => (
+/// Map legacy catalog selection to an outbound in the merged profile.
+TikNetPersonalProxyNode? resolveCatalogSelectionToNode(
+  TikNetServerSelection selection,
+  TikNetPersonalOutboundCatalog? personalCatalog,
+) {
+  final id = selection.catalogId;
+  if (id == null || id <= 0) return null;
+  return personalCatalog?.nodes.where((n) => n.catalogId == id).firstOrNull;
+}
+
+/// Default: smart connection (ping-all → lowest latency).
+TikNetServerSelection smartSelection() => (
       isPersonal: true,
       catalogId: null,
-      personalKind: TikNetPersonalPickKind.defaultAuto,
+      personalKind: TikNetPersonalPickKind.smart,
       personalTag: null,
       personalGroupTag: null,
     );
 
+@Deprecated('Use smartSelection()')
+TikNetServerSelection personalDefaultSelection() => smartSelection();
+
 TikNetServerSelection parseServerSelection(String raw) {
   final t = raw.trim();
-  if (t.isEmpty || t == 'personal') return personalDefaultSelection();
+  if (t.isEmpty || t == 'personal' || t == 'smart') return smartSelection();
 
   if (t.startsWith('cat:')) {
     final id = int.tryParse(t.substring(4));
@@ -344,6 +390,7 @@ TikNetServerSelection parseServerSelection(String raw) {
     final parts = t.split(':');
     if (parts.length >= 3) {
       final kindKey = parts[1];
+      if (kindKey == 's') return smartSelection();
       if (kindKey == 'u' && parts.length >= 3) {
         return (
           isPersonal: true,
@@ -374,33 +421,49 @@ TikNetServerSelection parseServerSelection(String raw) {
     }
   }
 
-  return personalDefaultSelection();
+  return smartSelection();
 }
 
 String encodeServerSelection(TikNetServerSelection sel) {
   if (!sel.isPersonal && sel.catalogId != null) return 'cat:${sel.catalogId}';
-  if (!sel.isPersonal) return 'personal';
+  if (!sel.isPersonal) return 'smart';
   switch (sel.personalKind) {
+    case TikNetPersonalPickKind.smart:
+    case TikNetPersonalPickKind.defaultAuto:
+      return 'smart';
     case TikNetPersonalPickKind.urltest:
       final tag = sel.personalTag ?? '';
       final group = sel.personalGroupTag ?? '';
-      return tag.isEmpty ? 'personal' : 'p:u:$tag${group.isNotEmpty ? ':$group' : ''}';
+      return tag.isEmpty ? 'smart' : 'p:u:$tag${group.isNotEmpty ? ':$group' : ''}';
     case TikNetPersonalPickKind.balancer:
       final tag = sel.personalTag ?? '';
       final group = sel.personalGroupTag ?? '';
-      return tag.isEmpty ? 'personal' : 'p:b:$tag${group.isNotEmpty ? ':$group' : ''}';
+      return tag.isEmpty ? 'smart' : 'p:b:$tag${group.isNotEmpty ? ':$group' : ''}';
     case TikNetPersonalPickKind.proxy:
       final tag = sel.personalTag ?? '';
       final group = sel.personalGroupTag ?? '';
-      if (tag.isEmpty || group.isEmpty) return 'personal';
+      if (tag.isEmpty || group.isEmpty) return 'smart';
       return 'p:n:$group:$tag';
-    case TikNetPersonalPickKind.defaultAuto:
-      return 'personal';
   }
 }
 
-bool selectionNeedsOutboundApply(TikNetServerSelection sel) =>
+/// Merged profile is always used (sub + catalog outbounds in one sing-box).
+bool selectionUsesSubscriptionProfile(TikNetServerSelection sel) => true;
+
+bool selectionIsSmart(TikNetServerSelection sel) =>
     sel.isPersonal &&
     sel.catalogId == null &&
-    sel.personalKind != TikNetPersonalPickKind.defaultAuto &&
-    (sel.personalTag ?? '').isNotEmpty;
+    (sel.personalKind == TikNetPersonalPickKind.smart ||
+        sel.personalKind == TikNetPersonalPickKind.defaultAuto);
+
+bool selectionNeedsOutboundApply(TikNetServerSelection sel) {
+  if (!sel.isPersonal && sel.catalogId != null) return true; // legacy cat:{id}
+  return sel.isPersonal &&
+      sel.catalogId == null &&
+      (sel.personalKind == TikNetPersonalPickKind.smart ||
+          sel.personalKind == TikNetPersonalPickKind.defaultAuto ||
+          ((sel.personalKind == TikNetPersonalPickKind.proxy ||
+                  sel.personalKind == TikNetPersonalPickKind.urltest ||
+                  sel.personalKind == TikNetPersonalPickKind.balancer) &&
+              (sel.personalTag ?? '').isNotEmpty));
+}

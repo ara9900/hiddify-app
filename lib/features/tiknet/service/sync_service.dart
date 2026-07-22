@@ -18,7 +18,10 @@ import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_device_service.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
+import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/core/model/tiknet_config.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_config_merger.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_node_meta.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_ping_settings.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
@@ -43,7 +46,7 @@ class SyncService {
     return applyProfileFromCache();
   }
 
-  /// Fetches [api_urls] unrelated — profile (GET /api/customer/me) and config (GET /api/customer/subscription/config).
+  /// Fetches profile, aggregated subscription, catalog configs → one merged profile.
   Future<bool> syncAll() async {
     final auth = _ref.read(authServiceProvider);
     if (!auth.hasAppSession()) return false;
@@ -61,12 +64,68 @@ class SyncService {
       }
       final profileJson = _profileToJson(profile);
       await _ref.read(Preferences.tikNetCachedProfile.notifier).update(jsonEncode(profileJson));
+      await applyPanelPingSettingsFromBrand(_ref, profile.brand);
 
-      final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
-      if (configBytes.isEmpty) return false;
-      await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
-      await applyProfileFromCache();
+      List<int> subBytes = const [];
+      try {
+        subBytes = await api.getSubscriptionConfig(baseUrl: baseUrl, accessToken: token);
+      } catch (_) {}
+
+      var displayMode = TikNetServerDisplayMode.fromApi(_ref.read(Preferences.tikNetServerDisplayMode));
+      List<TikNetServerEntry> catalogServers = const [];
+      try {
+        final catalogData = await api.getServerCatalog(baseUrl: baseUrl, accessToken: token);
+        var modeRaw = (catalogData['display_mode'] as String?)?.trim();
+        if (modeRaw == null || modeRaw.isEmpty) {
+          try {
+            final appConfig = await api.getAppConfig(baseUrl: baseUrl, accessToken: token);
+            final serverDisplay = appConfig['server_display'];
+            if (serverDisplay is Map) {
+              await applyPanelServerDisplaySettings(_ref, Map<String, dynamic>.from(serverDisplay));
+            }
+            await applyPanelPingSettingsFromAppConfig(_ref, appConfig);
+            modeRaw = _ref.read(Preferences.tikNetServerDisplayMode);
+          } catch (_) {}
+        } else if (modeRaw.isNotEmpty) {
+          final current = _ref.read(Preferences.tikNetServerDisplayMode);
+          if (current != modeRaw) {
+            await _ref.read(Preferences.tikNetServerDisplayMode.notifier).update(modeRaw);
+          }
+        }
+        displayMode = TikNetServerDisplayMode.fromApi(modeRaw ?? _ref.read(Preferences.tikNetServerDisplayMode));
+        final parsed = TikNetServerCatalog.fromJson(catalogData);
+        if (displayMode != TikNetServerDisplayMode.personalOnly) {
+          catalogServers = parsed.servers.where((s) => s.accessible && s.id > 0).toList();
+        }
+      } catch (_) {}
+
+      final includeSub = displayMode != TikNetServerDisplayMode.catalogOnly;
+      final catalogInputs = <TikNetCatalogConfigInput>[];
+      if (catalogServers.isNotEmpty) {
+        catalogInputs.addAll(await _fetchCatalogConfigsParallel(api, baseUrl: baseUrl, token: token, servers: catalogServers));
+      }
+
+      final subRaw = includeSub && subBytes.isNotEmpty ? utf8.decode(subBytes, allowMalformed: true) : null;
+      final merged = mergeTikNetConfigs(subscriptionRaw: subRaw, catalogConfigs: catalogInputs);
+      final nodeCount = merged.nodes.length;
+
+      if (merged.isEmpty) {
+        // Fallbacks: raw sub alone, or remote subscription URL.
+        if (includeSub && subBytes.isNotEmpty) {
+          await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(subBytes));
+          await applyProfileFromCache();
+        } else {
+          final okRemote = await applyRemoteSubscriptionProfile();
+          if (!okRemote) return false;
+        }
+      } else {
+        final mergedBytes = utf8.encode(merged.configJson);
+        await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(mergedBytes));
+        await _ref.read(Preferences.tikNetNodeMetaJson.notifier).update(encodeTikNetNodeMeta(merged.nodes));
+        await applyProfileFromCache();
+      }
       _ref.invalidate(personalOutboundProvider);
+      _ref.invalidate(serverCatalogProvider);
 
       await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
 
@@ -77,16 +136,15 @@ class SyncService {
           await applyPanelServerDisplaySettings(_ref, Map<String, dynamic>.from(serverDisplay));
         }
         await applyPanelPingSettingsFromAppConfig(_ref, appConfig);
-      } catch (_) {
-        // app-config is best-effort; sync profile/config still succeeded
-      }
+      } catch (_) {}
 
       await auth.extendSession();
       unawaited(_ref.read(tikNetDeviceServiceProvider).registerIfLoggedIn());
       if (tikNetMode) {
-        TikNetDiagnosticLog.i('sync', 'syncAll ok', {
+        TikNetDiagnosticLog.i('sync', 'syncAll merged ok', {
           'profile_id': _ref.read(Preferences.tikNetProfileId),
-          'sub_url_len': _ref.read(Preferences.tikNetSubscriptionUrl).length,
+          'nodes': nodeCount,
+          'catalog_fetched': catalogInputs.length,
         });
       }
       return true;
@@ -102,61 +160,58 @@ class SyncService {
     }
   }
 
-  /// Fetch and apply config for current server selection (personal or catalog).
+  Future<List<TikNetCatalogConfigInput>> _fetchCatalogConfigsParallel(
+    TikNetApi api, {
+    required String baseUrl,
+    required String token,
+    required List<TikNetServerEntry> servers,
+  }) async {
+    const concurrency = 4;
+    final out = <TikNetCatalogConfigInput>[];
+    for (var i = 0; i < servers.length; i += concurrency) {
+      final chunk = servers.skip(i).take(concurrency).toList();
+      final results = await Future.wait(
+        chunk.map((s) async {
+          try {
+            final bytes = await api
+                .getServerConfig(baseUrl: baseUrl, accessToken: token, serverId: s.id)
+                .timeout(const Duration(seconds: 12));
+            if (bytes.isEmpty) return null;
+            return TikNetCatalogConfigInput(server: s, configBytes: bytes);
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+      for (final r in results) {
+        if (r != null) out.add(r);
+      }
+    }
+    return out;
+  }
+
+  /// Ensure merged profile is active; outbound pick happens after connect.
   Future<bool> applySelectedServerConfig() async {
     final auth = _ref.read(authServiceProvider);
     if (!auth.hasAppSession()) return false;
-    final baseUrl = _ref.read(Preferences.tikNetPanelBaseUrl);
-    final token = auth.getToken();
-    if (baseUrl.isEmpty || token.isEmpty) return false;
 
-    final selection = parseServerSelection(_ref.read(Preferences.tikNetSelectedServer));
-    if (selection.isPersonal && _ref.read(Preferences.tikNetProfileId).isNotEmpty) {
+    if (_ref.read(Preferences.tikNetProfileId).isNotEmpty) {
       final cached = getConfigs();
-      if (isHiddifyXraySubscriptionBundle(cached)) {
-        return applyRemoteSubscriptionProfile();
+      if (cached.trim().isNotEmpty && !isHiddifyXraySubscriptionBundle(cached)) {
+        final ok = await applyProfileFromCache();
+        if (ok) return true;
       }
-      return true;
     }
-
-    final api = _ref.read(tikNetApiProvider);
-    try {
-      final configBytes = await _fetchConfigBytes(api, baseUrl: baseUrl, token: token);
-      if (configBytes.isEmpty) return false;
-      await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(configBytes));
-      await applyProfileFromCache();
-      _ref.invalidate(personalOutboundProvider);
-      await _ref.read(Preferences.tikNetLastSyncTime.notifier).update(DateTime.now());
-      await auth.extendSession();
-      return true;
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 401 && await auth.clearSessionIfUnauthorized()) {
-        throw SyncTokenExpiredException();
-      }
-      return false;
-    } on TikNetApiException {
-      return false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<List<int>> _fetchConfigBytes(TikNetApi api, {required String baseUrl, required String token}) async {
-    final selection = parseServerSelection(_ref.read(Preferences.tikNetSelectedServer));
-    if (selection.isPersonal || selection.catalogId == null) {
-      return api.getSubscriptionConfig(baseUrl: baseUrl, accessToken: token);
-    }
-    return api.getServerConfig(
-      baseUrl: baseUrl,
-      accessToken: token,
-      serverId: selection.catalogId!,
-    );
+    return syncAllAndApplyProfile();
   }
 
   TikNetServerSelection get selectedServer => parseServerSelection(_ref.read(Preferences.tikNetSelectedServer));
 
   Future<void> setSelectedServer(TikNetServerSelection selection) async {
     await _ref.read(Preferences.tikNetSelectedServer.notifier).update(encodeServerSelection(selection));
+    // New pick starts a fresh smart session (lock cleared until next connect).
+    await _ref.read(Preferences.tikNetSmartLockedTag.notifier).update('');
+    await _ref.read(Preferences.tikNetSmartLockedGroup.notifier).update('');
   }
 
   /// Downloads subscription on device (same path as stock Hiddify). Used when panel bytes do not list nodes.

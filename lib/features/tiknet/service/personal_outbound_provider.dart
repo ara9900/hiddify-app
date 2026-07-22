@@ -6,6 +6,7 @@ import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_node_meta.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class TikNetPersonalNodesState {
@@ -23,6 +24,7 @@ class TikNetPersonalNodesState {
 final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) async {
   ref.watch(Preferences.tikNetCachedConfig);
   ref.watch(Preferences.tikNetProfileId);
+  ref.watch(Preferences.tikNetNodeMetaJson);
 
   var profileId = ref.read(Preferences.tikNetProfileId);
   if (profileId.isEmpty && ref.read(Preferences.tikNetCachedConfig).isNotEmpty) {
@@ -130,10 +132,18 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
     return TikNetPersonalNodesState(
       catalog: null,
       nodePings: const {},
-      parseHint: 'لیست کانفیگ از اشتراک خوانده نشد. از حساب من → بروزرسانی را بزنید.',
+      parseHint: 'لیست کانفیگ آماده نیست. از حساب من → بروزرسانی را بزنید.',
     );
   }
 
+  final meta = decodeTikNetNodeMeta(ref.read(Preferences.tikNetNodeMetaJson));
+  final enriched = applyNodeMeta(resolved.nodes, meta);
+  final withMeta = TikNetPersonalOutboundCatalog(
+    mainGroupTag: resolved.mainGroupTag,
+    autoModes: resolved.autoModes,
+    nodes: enriched,
+  );
+
   // Ping: on-demand via [tikNetNodePingsProvider] when VPN is connected (HTTP urltest).
-  return TikNetPersonalNodesState(catalog: resolved, nodePings: const {}, parseHint: hint);
+  return TikNetPersonalNodesState(catalog: withMeta, nodePings: const {}, parseHint: hint);
 });

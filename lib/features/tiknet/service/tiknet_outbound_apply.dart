@@ -7,47 +7,59 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
+import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-ConnectionStatus? _connectionStatus(dynamic ref) {
+ConnectionStatus? _connectionStatus(WidgetRef ref) {
   return switch (ref.read(connectionNotifierProvider)) {
     AsyncData<ConnectionStatus>(value: final status) => status,
     _ => null,
   };
 }
 
-/// After profile load / connect, apply personal urltest/balancer/proxy pick via core API.
-Future<void> applyTikNetPersonalOutboundSelection(dynamic ref) async {
-  final selection = parseServerSelection(ref.read(Preferences.tikNetSelectedServer));
+/// After profile load / connect, apply smart / proxy / legacy catalog pick via core API.
+Future<void> applyTikNetPersonalOutboundSelection(WidgetRef ref) async {
+  var selection = parseServerSelection(ref.read(Preferences.tikNetSelectedServer));
+  if (_connectionStatus(ref) is! Connected) return;
+  if (!selectionNeedsOutboundApply(selection)) return;
+
+  // Legacy cat:{id} → merged outbound tag (same profile, selectProxy only).
+  if (!selection.isPersonal && selection.catalogId != null) {
+    final nodesState = await ref.read(personalOutboundProvider.future).timeout(
+      const Duration(seconds: 12),
+      onTimeout: () => const TikNetPersonalNodesState(catalog: null, nodePings: {}),
+    );
+    final node = resolveCatalogSelectionToNode(selection, nodesState.catalog);
+    if (node == null) return;
+    selection = (
+      isPersonal: true,
+      catalogId: null,
+      personalKind: TikNetPersonalPickKind.proxy,
+      personalTag: node.tag,
+      personalGroupTag: node.groupTag,
+    );
+  }
+
   if (!selection.isPersonal || selection.catalogId != null) return;
 
-  if (_connectionStatus(ref) is! Connected) return;
-
-  if (selection.personalKind == TikNetPersonalPickKind.defaultAuto) {
-    const group = 'Select';
-    const auto = 'Auto';
-    await ref
-        .read(proxyRepositoryProvider)
-        .selectProxy(group, auto)
-        .getOrElse((_) => unit)
-        .run()
-        .timeout(const Duration(seconds: 8), onTimeout: () {});
+  if (selectionIsSmart(selection)) {
+    await applyTikNetSmartConnect(ref);
     return;
   }
 
-  if (!selectionNeedsOutboundApply(selection)) return;
-
   var groupTag = (selection.personalGroupTag ?? '').trim();
   final outboundTag = (selection.personalTag ?? '').trim();
-  if (groupTag.isEmpty) {
-    groupTag = 'Select';
-  }
-  if (groupTag.isEmpty || outboundTag.isEmpty) return;
+  if (groupTag.isEmpty) groupTag = 'Select';
+  if (outboundTag.isEmpty) return;
+
+  // Manual pick: clear any smart session lock.
+  await clearTikNetSmartLockWidget(ref);
 
   await ref
       .read(proxyRepositoryProvider)
       .selectProxy(groupTag, outboundTag)
       .getOrElse((_) => unit)
       .run()
-      .timeout(const Duration(seconds: 8), onTimeout: () {});
+      .timeout(const Duration(seconds: 8), onTimeout: () => unit);
 }

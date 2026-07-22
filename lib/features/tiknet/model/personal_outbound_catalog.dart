@@ -15,9 +15,12 @@ enum TikNetServerDisplayMode {
       };
 }
 
-/// Special auto-pick modes from subscription (urltest / balancer).
+/// How the user picks a config from the subscription / smart mode.
 enum TikNetPersonalPickKind {
+  /// Legacy default (maps to smart in UI).
   defaultAuto,
+  /// Ping all subscription configs, connect to lowest latency; stick until reconnect.
+  smart,
   urltest,
   balancer,
   proxy,
@@ -45,12 +48,23 @@ class TikNetPersonalProxyNode {
     required this.groupTag,
     required this.label,
     this.probeUrl = '',
+    this.source = TikNetNodeSource.subscription,
+    this.catalogId,
   });
 
   final String tag;
   final String groupTag;
   final String label;
   final String probeUrl;
+  final TikNetNodeSource source;
+  final int? catalogId;
+
+  bool get isCatalog => source == TikNetNodeSource.catalog;
+}
+
+enum TikNetNodeSource {
+  subscription,
+  catalog,
 }
 
 class TikNetPersonalOutboundCatalog {

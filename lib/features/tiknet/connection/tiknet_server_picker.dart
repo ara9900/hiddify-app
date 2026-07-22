@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -7,12 +8,14 @@ import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_country_flag.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+/// Unified config picker: Smart Connection → subscription configs → catalog servers.
 class TikNetServerPickerSheet extends ConsumerWidget {
   const TikNetServerPickerSheet({super.key, this.scrollController});
 
@@ -37,12 +40,6 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     );
   }
 
-  static String tierTitle(String tier) => switch (tier) {
-        'vip' => 'VIP',
-        'normal' => 'معمولی',
-        _ => 'رایگان',
-      };
-
   final ScrollController? scrollController;
 
   @override
@@ -56,7 +53,9 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     final pingsAsync = ref.watch(tikNetNodePingsProvider);
     final nodePings = pingsAsync.valueOrNull ?? const {};
     final measuringPing = pingsAsync.isLoading;
-    final personalHasNodes = personalAsync.valueOrNull?.catalog?.nodes.isNotEmpty == true;
+    final smartPicking = ref.watch(tikNetSmartPickingProvider);
+    final personalCatalog = personalAsync.valueOrNull?.catalog;
+    final hasSubNodes = personalCatalog?.nodes.isNotEmpty == true;
 
     return Column(
       children: [
@@ -77,23 +76,25 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('انتخاب سرور', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    Text('انتخاب کانفیگ', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                     const Gap(4),
                     Text(
-                      vpnConnected
-                          ? 'برای پینگ واقعی (HTTP) دکمه ⚡ را بزنید'
-                          : 'برای پینگ کانفیگ‌ها ابتدا VPN را وصل کنید',
+                      smartPicking
+                          ? 'در حال انتخاب بهترین کانفیگ…'
+                          : vpnConnected
+                              ? 'متصل هستید — تغییر کانفیگ ممکن است اتصال را عوض کند'
+                              : 'اتصال هوشمند یا یک کانفیگ را انتخاب کنید',
                       style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
                     ),
                   ],
                 ),
               ),
-              if (personalHasNodes)
+              if (hasSubNodes)
                 IconButton(
                   onPressed: (!vpnConnected || measuringPing)
                       ? null
                       : () => ref.read(tikNetNodePingsProvider.notifier).measure(),
-                  tooltip: 'پینگ واقعی کانفیگ‌ها',
+                  tooltip: 'پینگ همه کانفیگ‌ها',
                   icon: measuringPing
                       ? const SizedBox(
                           width: 22,
@@ -113,61 +114,65 @@ class TikNetServerPickerSheet extends ConsumerWidget {
             error: (_, _) => Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('خطا در بارگذاری سرورها.', style: TextStyle(color: theme.colorScheme.error)),
+                child: Text('خطا در بارگذاری لیست.', style: TextStyle(color: theme.colorScheme.error)),
               ),
             ),
             data: (catalog) {
               final personalState = personalAsync.valueOrNull;
-              final personalCatalog = personalState?.catalog;
-              final personalOnly = catalog.displayMode == TikNetServerDisplayMode.personalOnly;
-              final groups = catalog.groupedByTier();
-              const tierOrder = ['free', 'normal', 'vip'];
-
-              bool isDefaultPersonalSelected() =>
-                  selected.isPersonal &&
-                  selected.catalogId == null &&
-                  selected.personalKind == TikNetPersonalPickKind.defaultAuto;
+              final allNodes = personalCatalog?.nodes ?? const <TikNetPersonalProxyNode>[];
+              final showSub = catalog.showPersonal;
+              final showCatalog = catalog.showCatalog;
+              final nodes = allNodes.where((n) {
+                if (n.isCatalog) return showCatalog;
+                return showSub;
+              }).toList();
+              final mergedCatalogIds = {
+                for (final n in nodes)
+                  if (n.catalogId != null) n.catalogId!,
+              };
+              final lockedCatalog = showCatalog
+                  ? catalog.servers.where((s) => !s.accessible && !mergedCatalogIds.contains(s.id)).toList()
+                  : const <TikNetServerEntry>[];
 
               return ListView(
                 controller: scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
-                  if (catalog.showPersonal && !personalOnly) ...[
+                  if (showSub || showCatalog) ...[
                     _ServerRow(
-                      title: 'اشتراک من',
-                      subtitle: 'کانفیگ اختصاصی حساب شما',
+                      title: 'اتصال هوشمند',
+                      subtitle: 'پینگ همه کانفیگ‌ها و اتصال به سریع‌ترین',
                       personal: true,
-                      selected: isDefaultPersonalSelected(),
+                      smart: true,
+                      selected: selectionIsSmart(selected),
                       enabled: true,
-                      onTap: () => _select(context, ref, sync, personalDefaultSelection()),
+                      onTap: () => _select(context, ref, sync, smartSelection()),
                     ),
-                  ],
-                  if (catalog.showPersonal && personalOnly) ...[
-                    const _SectionHeader(title: 'اشتراک اختصاصی'),
-                    _ServerRow(
-                      title: 'پیش‌فرض اشتراک',
-                      subtitle: 'همان انتخاب پیش‌فرض در کانفیگ',
-                      personal: true,
-                      selected: isDefaultPersonalSelected(),
-                      enabled: true,
-                      onTap: () => _select(context, ref, sync, personalDefaultSelection()),
-                    ),
-                    if (personalAsync.isLoading &&
-                        (personalCatalog == null || personalCatalog.nodes.isEmpty))
+                    if (personalAsync.isLoading && nodes.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 24),
                         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                       ),
-                    if (personalCatalog != null) ...[
-                      for (final mode in personalCatalog.autoModes)
-                        _ServerRow(
-                          title: mode.title,
-                          subtitle: mode.subtitle,
-                          personal: true,
-                          selected: selected.isPersonal &&
-                              selected.personalKind == mode.kind &&
-                              selected.personalTag == mode.tag,
+                    if (nodes.isNotEmpty) ...[
+                      const _SectionHeader(title: 'همه کانفیگ‌ها'),
+                      ...nodes.map((node) {
+                        final ping = nodePings[node.tag];
+                        final badge = node.isCatalog ? 'کاتالوگ' : 'اشتراک';
+                        final selectedNode = selected.isPersonal &&
+                            selected.personalKind == TikNetPersonalPickKind.proxy &&
+                            selected.personalTag == node.tag;
+                        final selectedLegacyCat = !selected.isPersonal &&
+                            selected.catalogId != null &&
+                            selected.catalogId == node.catalogId;
+                        return _ServerRow(
+                          title: node.label,
+                          subtitle: badge,
+                          personal: !node.isCatalog,
+                          selected: selectedNode || selectedLegacyCat,
                           enabled: true,
+                          pingLabel: ping?.pingLabel,
+                          pingColor: ping?.pingColor,
+                          isUnreachableFromDevice: ping?.state == TikNetClientPingState.unreachable,
                           onTap: () => _select(
                             context,
                             ref,
@@ -175,42 +180,26 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                             (
                               isPersonal: true,
                               catalogId: null,
-                              personalKind: mode.kind,
-                              personalTag: mode.tag,
-                              personalGroupTag: mode.groupTag,
+                              personalKind: TikNetPersonalPickKind.proxy,
+                              personalTag: node.tag,
+                              personalGroupTag: node.groupTag,
                             ),
                           ),
+                        );
+                      }),
+                    ],
+                    if (lockedCatalog.isNotEmpty) ...[
+                      const _SectionHeader(title: 'قفل‌شده'),
+                      ...lockedCatalog.map(
+                        (s) => _ServerRow(
+                          title: s.name,
+                          subtitle: [s.countryLabel, s.tierLabel, 'کاتالوگ'].where((e) => e.isNotEmpty).join(' · '),
+                          countryCode: s.countryCode,
+                          selected: false,
+                          enabled: false,
+                          locked: true,
                         ),
-                      if (personalCatalog.nodes.isNotEmpty) ...[
-                        const _SectionHeader(title: 'سرورها'),
-                        ...personalCatalog.nodes.map((node) {
-                          final ping = nodePings[node.tag];
-                          return _ServerRow(
-                            title: node.label,
-                            subtitle: 'انتخاب مستقیم این کانفیگ',
-                            personal: true,
-                            selected: selected.isPersonal &&
-                                selected.personalKind == TikNetPersonalPickKind.proxy &&
-                                selected.personalTag == node.tag,
-                            enabled: true,
-                            pingLabel: ping?.pingLabel,
-                            pingColor: ping?.pingColor,
-                            isUnreachableFromDevice: ping?.state == TikNetClientPingState.unreachable,
-                            onTap: () => _select(
-                              context,
-                              ref,
-                              sync,
-                              (
-                                isPersonal: true,
-                                catalogId: null,
-                                personalKind: TikNetPersonalPickKind.proxy,
-                                personalTag: node.tag,
-                                personalGroupTag: node.groupTag,
-                              ),
-                            ),
-                          );
-                        }),
-                      ],
+                      ),
                     ],
                     if (personalState?.parseHint != null && personalState!.parseHint!.isNotEmpty)
                       Padding(
@@ -221,54 +210,19 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                           style: const TextStyle(color: TikNetColors.onSurfaceVariant, fontSize: 12),
                         ),
                       ),
-                    if (personalCatalog != null &&
-                        personalCatalog.isEmpty &&
-                        !personalAsync.isLoading)
+                    if (!personalAsync.isLoading && nodes.isEmpty)
                       const Padding(
                         padding: EdgeInsets.all(16),
                         child: Text(
-                          'لیست کانفیگ از اشتراک خوانده نشد. یک‌بار «بروزرسانی» بزنید.',
+                          'کانفیگ هنوز آماده نیست. از حساب من → بروزرسانی بزنید.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: TikNetColors.onSurfaceVariant, fontSize: 13),
                         ),
                       ),
-                  ],
-                  if (catalog.showCatalog)
-                    for (final tier in tierOrder)
-                      if (groups[tier]?.isNotEmpty == true) ...[
-                        _SectionHeader(title: tierTitle(tier)),
-                        ...groups[tier]!.map(
-                          (s) => _ServerRow(
-                            title: s.name,
-                            subtitle: [s.countryLabel, s.tierLabel].where((e) => e.isNotEmpty).join(' · '),
-                            countryCode: s.countryCode,
-                            selected: !selected.isPersonal && selected.catalogId == s.id,
-                            enabled: s.accessible,
-                            locked: !s.accessible,
-                            pingLabel: s.pingLabel,
-                            pingColor: s.pingColor,
-                            isUnreachableFromDevice: s.isUnreachableFromDevice,
-                            onTap: s.accessible
-                                ? () => _select(
-                                      context,
-                                      ref,
-                                      sync,
-                                      (
-                                        isPersonal: false,
-                                        catalogId: s.id,
-                                        personalKind: TikNetPersonalPickKind.defaultAuto,
-                                        personalTag: null,
-                                        personalGroupTag: null,
-                                      ),
-                                    )
-                                : null,
-                          ),
-                        ),
-                      ],
-                  if (!catalog.showPersonal && !catalog.showCatalog)
+                  ] else
                     const Padding(
                       padding: EdgeInsets.all(32),
-                      child: Text('سروری برای نمایش تنظیم نشده است.', textAlign: TextAlign.center),
+                      child: Text('کانفیگی برای نمایش تنظیم نشده است.', textAlign: TextAlign.center),
                     ),
                 ],
               );
@@ -286,12 +240,13 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     TikNetServerSelection selection,
   ) async {
     Navigator.pop(context);
+    await clearTikNetSmartLockWidget(ref);
     await sync.setSelectedServer(selection);
     ref.invalidate(serverCatalogProvider);
     ref.invalidate(personalOutboundProvider);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('در حال اعمال کانفیگ سرور...'), behavior: SnackBarBehavior.floating),
+      const SnackBar(content: Text('در حال اعمال کانفیگ…'), behavior: SnackBarBehavior.floating),
     );
     try {
       final ok = await sync.applySelectedServerConfig();
@@ -299,7 +254,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok ? 'سرور انتخاب شد.' : 'اعمال کانفیگ ناموفق بود.'),
+          content: Text(ok ? 'کانفیگ انتخاب شد.' : 'اعمال کانفیگ ناموفق بود.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -336,6 +291,7 @@ class _ServerRow extends StatelessWidget {
     required this.enabled,
     this.countryCode,
     this.personal = false,
+    this.smart = false,
     this.locked = false,
     this.pingLabel,
     this.pingColor,
@@ -347,6 +303,7 @@ class _ServerRow extends StatelessWidget {
   final String subtitle;
   final String? countryCode;
   final bool personal;
+  final bool smart;
   final bool selected;
   final bool enabled;
   final bool locked;
@@ -359,7 +316,11 @@ class _ServerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final borderColor = selected ? TikNetColors.primary : TikNetColors.border;
-    final bg = selected ? TikNetColors.primary.withValues(alpha: 0.1) : TikNetColors.surfaceVariant.withValues(alpha: 0.35);
+    final bg = selected
+        ? TikNetColors.primary.withValues(alpha: 0.1)
+        : smart
+            ? TikNetColors.primary.withValues(alpha: 0.06)
+            : TikNetColors.surfaceVariant.withValues(alpha: 0.35);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -378,7 +339,18 @@ class _ServerRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 children: [
-                  TikNetCountryFlag(countryCode: countryCode, personal: personal, size: 44),
+                  if (smart)
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: TikNetColors.primary.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.auto_awesome_rounded, color: TikNetColors.primary),
+                    )
+                  else
+                    TikNetCountryFlag(countryCode: countryCode, personal: personal, size: 44),
                   const Gap(12),
                   Expanded(
                     child: Column(
@@ -430,11 +402,14 @@ class TikNetServerSelectorCard extends ConsumerWidget {
     final catalog = ref.watch(serverCatalogProvider).valueOrNull;
     final personalNodes = ref.watch(personalOutboundProvider).valueOrNull;
     final nodePings = ref.watch(tikNetNodePingsProvider).valueOrNull;
+    final smartLocked = ref.watch(Preferences.tikNetSmartLockedTag);
+    final smartPicking = ref.watch(tikNetSmartPickingProvider);
     final info = resolveSelectedServerInfo(
       selected: selected,
       catalog: catalog,
       personalCatalog: personalNodes?.catalog,
       personalNodePings: nodePings,
+      smartLockedTag: smartLocked,
     );
     final vpnConnected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
 
@@ -457,11 +432,27 @@ class TikNetServerSelectorCard extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                TikNetCountryFlag(
-                  countryCode: info.countryCode,
-                  personal: info.personal,
-                  size: 48,
-                ),
+                if (selectionIsSmart(selected))
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: TikNetColors.primary.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: smartPicking
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_awesome_rounded, color: TikNetColors.primary),
+                  )
+                else
+                  TikNetCountryFlag(
+                    countryCode: info.countryCode,
+                    personal: info.personal,
+                    size: 48,
+                  ),
                 const Gap(14),
                 Expanded(
                   child: Column(
@@ -470,11 +461,13 @@ class TikNetServerSelectorCard extends ConsumerWidget {
                       Row(
                         children: [
                           Text(
-                            'سرور انتخابی',
+                            'کانفیگ انتخابی',
                             style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
                           ),
                           const Spacer(),
-                          if (vpnConnected)
+                          if (smartPicking)
+                            const _MiniStatusPill(label: 'انتخاب هوشمند…', color: TikNetColors.connecting)
+                          else if (vpnConnected)
                             const _MiniStatusPill(label: 'VPN روشن', color: TikNetColors.connected)
                           else
                             const _MiniStatusPill(label: 'VPN خاموش', color: TikNetColors.disconnected),
