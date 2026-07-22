@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/proxy/active/ip_widget.dart';
-import 'package:hiddify/gen/fonts.gen.dart';
+import 'package:hiddify/core/theme/font_families.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
 import 'package:hiddify/utils/platform_utils.dart';
@@ -23,7 +23,7 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
       title: Text(
         proxy.tagDisplay,
         overflow: TextOverflow.ellipsis,
-        style: PlatformUtils.isWindows ? const TextStyle(fontFamily: FontFamily.emoji) : null,
+        style: PlatformUtils.isWindows ? const TextStyle(fontFamily: AppFontFamilies.emoji) : null,
       ),
       leading: IPCountryFlag(
         countryCode: proxy.ipinfo.countryCode,
