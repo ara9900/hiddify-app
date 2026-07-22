@@ -9,6 +9,8 @@ env:
   FLUTTER_VERSION: '3.38.5'
   NDK_VERSION: r28c
   HIDDIFY_CORE_COMMIT: a82d2b8f047ce769caad42ad9d3ab2c0ef53208a
+  # Pin libbox AAR; "draft" floats and breaks Android PlatformInterface (e.g. closeNeighborMonitor).
+  CORE_AAR_URL: https://github.com/hiddify/hiddify-next-core/releases/download/v4.1.0
 
 jobs:
   build:
@@ -95,7 +97,7 @@ jobs:
           echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
 
       - name: Prepare
-        run: make android-apk-prepare || make android-aab-prepare
+        run: make android-apk-prepare CORE_URL="${{ env.CORE_AAR_URL }}" || make android-aab-prepare CORE_URL="${{ env.CORE_AAR_URL }}"
 
       - name: Fix TikNet PNGs for AAPT2
         run: |

@@ -50,9 +50,9 @@ CORE_NAME=hiddify-lib
 LIB_NAME=hiddify-core
 
 ifeq ($(CHANNEL),prod)
-	CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/v$(core.version)
+	CORE_URL ?= https://github.com/hiddify/hiddify-next-core/releases/download/v$(core.version)
 else
-	CORE_URL=https://github.com/hiddify/hiddify-next-core/releases/download/draft
+	CORE_URL ?= https://github.com/hiddify/hiddify-next-core/releases/download/draft
 endif
 
 ifeq ($(CHANNEL),prod)
