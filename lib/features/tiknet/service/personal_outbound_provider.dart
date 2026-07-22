@@ -144,6 +144,6 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
     nodes: enriched,
   );
 
-  // Ping: on-demand via [tikNetNodePingsProvider] when VPN is connected (HTTP urltest).
+  // Ping: on-demand via [tikNetNodePingsProvider] (TCP before VPN; urltest when connected).
   return TikNetPersonalNodesState(catalog: withMeta, nodePings: const {}, parseHint: hint);
 });

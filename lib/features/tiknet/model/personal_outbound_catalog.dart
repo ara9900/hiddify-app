@@ -510,6 +510,19 @@ TikNetPersonalOutboundCatalog? _catalogFromXrayConfigBundle(List<dynamic> items)
   );
 }
 
+/// Host+port for TCP reachability probes (from [TikNetPersonalProxyNode.probeUrl]).
+({String host, int port})? parseProbeTarget(String probeUrl) {
+  final raw = probeUrl.trim();
+  if (raw.isEmpty) return null;
+  final uri = Uri.tryParse(raw.contains('://') ? raw : 'https://$raw');
+  if (uri == null) return null;
+  final host = uri.host.trim();
+  if (host.isEmpty) return null;
+  final port = uri.hasPort ? uri.port : 443;
+  if (port <= 0 || port > 65535) return null;
+  return (host: host, port: port);
+}
+
 String _probeUrlFromOutbound(Map<String, dynamic> o) {
   final hosts = <String>[];
   void addHost(String? h) {
@@ -519,18 +532,25 @@ String _probeUrlFromOutbound(Map<String, dynamic> o) {
 
   addHost(o['server'] as String?);
   addHost(o['address'] as String?);
+  int? nestedPort;
   final settings = o['settings'];
   if (settings is Map<String, dynamic>) {
     final vnext = settings['vnext'];
     if (vnext is List) {
       for (final vn in vnext) {
-        if (vn is Map) addHost(vn['address'] as String?);
+        if (vn is Map) {
+          addHost(vn['address'] as String?);
+          nestedPort ??= (vn['port'] as num?)?.toInt();
+        }
       }
     }
     final servers = settings['servers'];
     if (servers is List) {
       for (final s in servers) {
-        if (s is Map) addHost(s['address'] as String?);
+        if (s is Map) {
+          addHost(s['address'] as String?);
+          nestedPort ??= (s['port'] as num?)?.toInt();
+        }
       }
     }
   }
@@ -548,7 +568,7 @@ String _probeUrlFromOutbound(Map<String, dynamic> o) {
   if (hosts.isEmpty) return '';
   final host = hosts.first;
   if (host.contains('://')) return host;
-  final port = (o['server_port'] as num?)?.toInt();
+  final port = (o['server_port'] as num?)?.toInt() ?? (o['port'] as num?)?.toInt() ?? nestedPort;
   if (port != null && port > 0 && port != 443) return 'https://$host:$port';
   return 'https://$host';
 }

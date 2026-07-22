@@ -70,4 +70,5 @@ app.*.map.json
 
 # Windows Self-Signed for msix
 windows/sign.pfx
-windows/sign.cer
+/build-output/
+*.apk

@@ -6,11 +6,15 @@ import 'package:hiddify/utils/validators.dart';
 String? parsePingTestUrl(Map<String, dynamic>? json) {
   if (json == null) return null;
   final direct = (json['ping_test_url'] as String?)?.trim();
-  if (direct != null && direct.isNotEmpty) return direct;
+  if (direct != null && direct.isNotEmpty) {
+    return isUrl(direct) ? direct : null;
+  }
   final network = json['network'];
   if (network is Map) {
     final nested = (network['ping_test_url'] as String?)?.trim();
-    if (nested != null && nested.isNotEmpty) return nested;
+    if (nested != null && nested.isNotEmpty) {
+      return isUrl(nested) ? nested : null;
+    }
   }
   return null;
 }

@@ -141,11 +141,20 @@ class SyncService {
       await auth.extendSession();
       unawaited(_ref.read(tikNetDeviceServiceProvider).registerIfLoggedIn());
       if (tikNetMode) {
+        final mergedCatalogCount = merged.nodes.where((n) => n.isCatalog).length;
         TikNetDiagnosticLog.i('sync', 'syncAll merged ok', {
           'profile_id': _ref.read(Preferences.tikNetProfileId),
           'nodes': nodeCount,
           'catalog_fetched': catalogInputs.length,
+          'catalog_nodes': mergedCatalogCount,
         });
+        if (catalogServers.isNotEmpty && mergedCatalogCount == 0) {
+          TikNetDiagnosticLog.w(
+            'sync',
+            'accessible catalog servers but no catalog nodes in merge — user should refresh again',
+            {'accessible': catalogServers.length, 'configs_ok': catalogInputs.length},
+          );
+        }
       }
       return true;
     } on DioException catch (e) {

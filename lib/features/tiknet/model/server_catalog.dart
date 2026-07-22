@@ -193,7 +193,9 @@ class TikNetServerCatalog {
 
   bool get showPersonal => personalAvailable && displayMode != TikNetServerDisplayMode.catalogOnly;
 
-  bool get showCatalog => displayMode != TikNetServerDisplayMode.personalOnly && servers.isNotEmpty;
+  /// Catalog section visibility follows [displayMode] only — merged `cat-…` nodes
+  /// must still show when the panel `/servers` list is empty or failed.
+  bool get showCatalog => displayMode != TikNetServerDisplayMode.personalOnly;
 
   Map<String, List<TikNetServerEntry>> groupedByTier() {
     final map = <String, List<TikNetServerEntry>>{};
@@ -205,6 +207,33 @@ class TikNetServerCatalog {
     }
     return map;
   }
+}
+
+/// Filter merged profile nodes for the picker by [TikNetServerDisplayMode].
+List<TikNetPersonalProxyNode> filterPickerNodesForDisplayMode(
+  List<TikNetPersonalProxyNode> nodes,
+  TikNetServerDisplayMode mode,
+) {
+  final showSub = mode != TikNetServerDisplayMode.catalogOnly;
+  final showCatalog = mode != TikNetServerDisplayMode.personalOnly;
+  return nodes.where((n) {
+    if (n.isCatalog) return showCatalog;
+    return showSub;
+  }).toList();
+}
+
+/// Accessible panel catalog servers that are not yet present as merged outbounds.
+List<TikNetServerEntry> accessibleCatalogMissingFromMerge(
+  List<TikNetServerEntry> servers,
+  Iterable<TikNetPersonalProxyNode> nodes,
+) {
+  final mergedIds = <int>{
+    for (final n in nodes)
+      if (n.catalogId != null) n.catalogId!,
+  };
+  return servers
+      .where((s) => s.accessible && s.id > 0 && !mergedIds.contains(s.id))
+      .toList();
 }
 
 /// Resolved label for current server selection.

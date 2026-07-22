@@ -55,7 +55,14 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     final measuringPing = pingsAsync.isLoading;
     final smartPicking = ref.watch(tikNetSmartPickingProvider);
     final personalCatalog = personalAsync.valueOrNull?.catalog;
-    final hasSubNodes = personalCatalog?.nodes.isNotEmpty == true;
+    final catalogForPing = catalogAsync.valueOrNull;
+    final previewNodes = catalogForPing == null
+        ? (personalCatalog?.nodes ?? const <TikNetPersonalProxyNode>[])
+        : filterPickerNodesForDisplayMode(
+            personalCatalog?.nodes ?? const <TikNetPersonalProxyNode>[],
+            catalogForPing.displayMode,
+          );
+    final hasPingableNodes = previewNodes.isNotEmpty;
 
     return Column(
       children: [
@@ -89,12 +96,12 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (hasSubNodes)
+              if (hasPingableNodes)
                 IconButton(
-                  onPressed: (!vpnConnected || measuringPing)
+                  onPressed: measuringPing
                       ? null
                       : () => ref.read(tikNetNodePingsProvider.notifier).measure(),
-                  tooltip: 'پینگ همه کانفیگ‌ها',
+                  tooltip: vpnConnected ? 'پینگ همه کانفیگ‌ها (urltest)' : 'پینگ دسترسی (TCP)',
                   icon: measuringPing
                       ? const SizedBox(
                           width: 22,
@@ -120,19 +127,21 @@ class TikNetServerPickerSheet extends ConsumerWidget {
             data: (catalog) {
               final personalState = personalAsync.valueOrNull;
               final allNodes = personalCatalog?.nodes ?? const <TikNetPersonalProxyNode>[];
-              final showSub = catalog.showPersonal;
-              final showCatalog = catalog.showCatalog;
-              final nodes = allNodes.where((n) {
-                if (n.isCatalog) return showCatalog;
-                return showSub;
-              }).toList();
+              // Visibility follows displayMode only (not empty panel /servers list).
+              final showSub = catalog.displayMode != TikNetServerDisplayMode.catalogOnly;
+              final showCatalog = catalog.displayMode != TikNetServerDisplayMode.personalOnly;
+              final nodes = filterPickerNodesForDisplayMode(allNodes, catalog.displayMode);
+              final extraAccessible = showCatalog
+                  ? accessibleCatalogMissingFromMerge(catalog.servers, allNodes)
+                  : const <TikNetServerEntry>[];
               final mergedCatalogIds = {
-                for (final n in nodes)
+                for (final n in allNodes)
                   if (n.catalogId != null) n.catalogId!,
               };
               final lockedCatalog = showCatalog
                   ? catalog.servers.where((s) => !s.accessible && !mergedCatalogIds.contains(s.id)).toList()
                   : const <TikNetServerEntry>[];
+              final hasAnyConfigRows = nodes.isNotEmpty || extraAccessible.isNotEmpty;
 
               return ListView(
                 controller: scrollController,
@@ -148,12 +157,12 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                       enabled: true,
                       onTap: () => _select(context, ref, sync, smartSelection()),
                     ),
-                    if (personalAsync.isLoading && nodes.isEmpty)
+                    if (personalAsync.isLoading && !hasAnyConfigRows)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 24),
                         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                       ),
-                    if (nodes.isNotEmpty) ...[
+                    if (hasAnyConfigRows) ...[
                       const _SectionHeader(title: 'همه کانفیگ‌ها'),
                       ...nodes.map((node) {
                         final ping = nodePings[node.tag];
@@ -187,6 +196,29 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                           ),
                         );
                       }),
+                      ...extraAccessible.map((s) {
+                        final selectedLegacyCat =
+                            !selected.isPersonal && selected.catalogId != null && selected.catalogId == s.id;
+                        return _ServerRow(
+                          title: s.name,
+                          subtitle: [s.countryLabel, s.tierLabel, 'کاتالوگ'].where((e) => e.isNotEmpty).join(' · '),
+                          countryCode: s.countryCode,
+                          selected: selectedLegacyCat,
+                          enabled: true,
+                          onTap: () => _select(
+                            context,
+                            ref,
+                            sync,
+                            (
+                              isPersonal: false,
+                              catalogId: s.id,
+                              personalKind: TikNetPersonalPickKind.defaultAuto,
+                              personalTag: null,
+                              personalGroupTag: null,
+                            ),
+                          ),
+                        );
+                      }),
                     ],
                     if (lockedCatalog.isNotEmpty) ...[
                       const _SectionHeader(title: 'قفل‌شده'),
@@ -210,7 +242,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                           style: const TextStyle(color: TikNetColors.onSurfaceVariant, fontSize: 12),
                         ),
                       ),
-                    if (!personalAsync.isLoading && nodes.isEmpty)
+                    if (!personalAsync.isLoading && !hasAnyConfigRows)
                       const Padding(
                         padding: EdgeInsets.all(16),
                         child: Text(

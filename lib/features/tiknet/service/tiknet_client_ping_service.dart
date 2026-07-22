@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -21,7 +22,7 @@ String urlTestGroupTagForCatalog(TikNetPersonalOutboundCatalog catalog) {
   return '';
 }
 
-/// Latency via sing-box urltest (same as Hiddify proxy list). Requires VPN core running.
+/// Latency via sing-box urltest when core is up; otherwise TCP connect to outbound host:port.
 class TikNetClientPingService {
   TikNetClientPingService(this._ref);
 
@@ -40,6 +41,15 @@ class TikNetClientPingService {
       personalPing: null,
       displayMode: catalog.displayMode,
     );
+  }
+
+  /// TCP connect to each node's probe host:port (works without VPN / core).
+  Future<Map<String, TikNetClientPingResult>> measureNodePingsTcp(
+    TikNetPersonalOutboundCatalog catalog, {
+    Duration timeout = const Duration(seconds: 2),
+    int concurrency = 4,
+  }) {
+    return measureNodesTcp(catalog.nodes, timeout: timeout, concurrency: concurrency);
   }
 
   /// urltest on [groupTag] then read [OutboundInfo.urlTestDelay] per node tag.
@@ -115,6 +125,60 @@ class TikNetClientPingService {
       );
     }
     return out;
+  }
+}
+
+/// Pure TCP reachability map (unit-testable without Riverpod / VPN core).
+Future<Map<String, TikNetClientPingResult>> measureNodesTcp(
+  List<TikNetPersonalProxyNode> nodes, {
+  Duration timeout = const Duration(seconds: 2),
+  int concurrency = 4,
+}) async {
+  if (nodes.isEmpty) return const {};
+  final out = <String, TikNetClientPingResult>{};
+  var next = 0;
+  final workers = concurrency.clamp(1, 8);
+
+  Future<void> worker() async {
+    while (true) {
+      final i = next;
+      next++;
+      if (i >= nodes.length) return;
+      final node = nodes[i];
+      out[node.tag] = await tcpPingProbeUrl(node.probeUrl, timeout: timeout);
+    }
+  }
+
+  await Future.wait(List.generate(workers, (_) => worker()));
+  return out;
+}
+
+Future<TikNetClientPingResult> tcpPingProbeUrl(
+  String probeUrl, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  final target = parseProbeTarget(probeUrl);
+  if (target == null) {
+    return const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+  }
+  final sw = Stopwatch()..start();
+  try {
+    final socket = await Socket.connect(target.host, target.port, timeout: timeout)
+        .timeout(timeout);
+    sw.stop();
+    try {
+      await socket.close();
+    } catch (_) {}
+    return TikNetClientPingResult(
+      state: TikNetClientPingState.reachable,
+      pingMs: sw.elapsedMilliseconds.clamp(1, 60000),
+    );
+  } on SocketException {
+    return const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
+  } on TimeoutException {
+    return const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
+  } catch (_) {
+    return const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
   }
 }
 

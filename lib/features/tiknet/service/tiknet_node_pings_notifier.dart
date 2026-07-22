@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
-import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// On-demand HTTP urltest pings (never auto-runs on list load — avoids ANR).
+/// On-demand pings (never auto-runs on list load — avoids ANR).
+/// Before VPN: TCP connect to outbound host:port. After Connected: core urltest.
 class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNetClientPingResult>> {
   @override
   Future<Map<String, TikNetClientPingResult>> build() async => const {};
@@ -17,11 +17,6 @@ class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNe
 
   Future<void> measure() async {
     if (state.isLoading) return;
-    final connected = ref.read(connectionNotifierProvider).valueOrNull is Connected;
-    if (!connected) {
-      state = const AsyncData({});
-      return;
-    }
     state = const AsyncLoading();
     state = await AsyncValue.guard(_runMeasure);
   }
@@ -31,11 +26,17 @@ class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNe
   Future<Map<String, TikNetClientPingResult>> _runMeasure() async {
     final catalog = ref.read(personalOutboundProvider).valueOrNull?.catalog;
     if (catalog == null || catalog.nodes.isEmpty) return const {};
+
+    final connected = ref.read(connectionNotifierProvider).valueOrNull is Connected;
+    final service = ref.read(tikNetClientPingServiceProvider);
+
     try {
-      return await ref
-          .read(tikNetClientPingServiceProvider)
-          .measureNodePingsFromCore(catalog)
-          .timeout(const Duration(seconds: 12));
+      if (connected) {
+        final fromCore = await service.measureNodePingsFromCore(catalog).timeout(const Duration(seconds: 12));
+        if (fromCore.isNotEmpty) return fromCore;
+        // Core urltest unavailable — fall back to TCP reachability.
+      }
+      return await service.measureNodePingsTcp(catalog).timeout(const Duration(seconds: 12));
     } on TimeoutException {
       return const {};
     }
