@@ -83,7 +83,11 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
     final expired = profile?.isExpired ?? sync.isSubscriptionExpired();
     final hasSubscription = profile?.hasSubscription ?? false;
 
-    final username = (profile?.username ?? '').trim().isNotEmpty ? profile!.username.trim() : '—';
+    final fromProfile = (profile?.username ?? '').trim();
+    final fromSaved = ref.watch(Preferences.tikNetSavedUsername).trim();
+    final username = fromProfile.isNotEmpty
+        ? fromProfile
+        : (fromSaved.isNotEmpty ? fromSaved : '—');
     final fullName = profile?.fullName?.trim();
     final initial = username != '—' ? username.substring(0, 1) : '؟';
 
@@ -94,6 +98,7 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
           SliverAppBar(
             pinned: true,
             centerTitle: true,
+            expandedHeight: 168,
             title: const Text('حساب من'),
             actions: [
               if (unread > 0)
@@ -112,6 +117,7 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
                 ),
             ],
             flexibleSpace: FlexibleSpaceBar(
+              collapseMode: CollapseMode.pin,
               background: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -177,6 +183,39 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
+                // Always-visible username (FlexibleSpace can collapse on small screens).
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: TikNetColors.surfaceVariant.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: TikNetColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person_outline_rounded, color: TikNetColors.primary),
+                      const Gap(12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'نام کاربری',
+                              style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
+                            ),
+                            const Gap(2),
+                            Text(
+                              username,
+                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Gap(16),
                 _StatsGrid(
                   planName: profile?.planName,
                   expireLabel: profile?.expireDate != null ? formatShamsiDate(profile!.expireDate) : '—',

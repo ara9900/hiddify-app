@@ -102,7 +102,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                   onPressed: measuringPing
                       ? null
                       : () => ref.read(tikNetNodePingsProvider.notifier).measure(),
-                  tooltip: vpnConnected ? 'پینگ واقعی سرورها (urltest)' : 'پینگ HTTP سرورها',
+                  tooltip: 'پینگ واقعی سرورها (در صورت نیاز اتصال برقرار می‌شود)',
                   icon: measuringPing
                       ? const SizedBox(
                           width: 22,
