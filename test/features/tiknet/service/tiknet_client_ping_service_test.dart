@@ -26,32 +26,28 @@ void main() {
     expect(parseProbeTarget('https://de.example.com'), (host: 'de.example.com', port: 443));
   });
 
-  test('measureNodesTcp marks reachable, unreachable, and noTarget', () async {
-    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+  test('measureNodesHttp marks reachable, unreachable, and noTarget', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() async {
-      await server.close();
+      await server.close(force: true);
     });
-    server.listen((socket) {
-      socket.destroy();
+    server.listen((request) async {
+      request.response.statusCode = 204;
+      await request.response.close();
     });
-
-    // Bind then close to get a port that refuses connections quickly.
-    final closed = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final closedPort = closed.port;
-    await closed.close();
 
     final nodes = [
       TikNetPersonalProxyNode(
         tag: 'ok',
         groupTag: 'Select',
         label: 'ok',
-        probeUrl: 'https://127.0.0.1:${server.port}',
+        probeUrl: 'http://127.0.0.1:${server.port}/',
       ),
-      TikNetPersonalProxyNode(
+      const TikNetPersonalProxyNode(
         tag: 'bad',
         groupTag: 'Select',
         label: 'bad',
-        probeUrl: 'https://127.0.0.1:$closedPort',
+        probeUrl: 'http://127.0.0.1:1/',
       ),
       const TikNetPersonalProxyNode(
         tag: 'none',
@@ -61,7 +57,7 @@ void main() {
       ),
     ];
 
-    final results = await measureNodesTcp(
+    final results = await measureNodesHttp(
       nodes,
       timeout: const Duration(seconds: 2),
       concurrency: 3,
@@ -71,5 +67,20 @@ void main() {
     expect(results['ok']?.pingMs, greaterThan(0));
     expect(results['bad']?.state, TikNetClientPingState.unreachable);
     expect(results['none']?.state, TikNetClientPingState.noTarget);
+  });
+
+  test('sortNodesByPing orders low latency first', () {
+    const nodes = [
+      TikNetPersonalProxyNode(tag: 'slow', groupTag: 'Select', label: 'slow'),
+      TikNetPersonalProxyNode(tag: 'fast', groupTag: 'Select', label: 'fast'),
+      TikNetPersonalProxyNode(tag: 'dead', groupTag: 'Select', label: 'dead'),
+    ];
+    final pings = {
+      'slow': const TikNetClientPingResult(state: TikNetClientPingState.reachable, pingMs: 300),
+      'fast': const TikNetClientPingResult(state: TikNetClientPingState.reachable, pingMs: 40),
+      'dead': const TikNetClientPingResult(state: TikNetClientPingState.unreachable),
+    };
+    final sorted = sortNodesByPing(nodes, pings);
+    expect(sorted.map((n) => n.tag).toList(), ['fast', 'slow', 'dead']);
   });
 }

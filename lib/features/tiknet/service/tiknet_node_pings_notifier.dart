@@ -8,7 +8,8 @@ import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart'
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// On-demand pings (never auto-runs on list load — avoids ANR).
-/// Before VPN: TCP connect to outbound host:port. After Connected: core urltest.
+/// Connected: sing-box HTTP urltest (real proxy latency).
+/// Disconnected: HTTP HEAD/GET to each outbound probe URL.
 class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNetClientPingResult>> {
   @override
   Future<Map<String, TikNetClientPingResult>> build() async => const {};
@@ -34,9 +35,8 @@ class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNe
       if (connected) {
         final fromCore = await service.measureNodePingsFromCore(catalog).timeout(const Duration(seconds: 12));
         if (fromCore.isNotEmpty) return fromCore;
-        // Core urltest unavailable — fall back to TCP reachability.
       }
-      return await service.measureNodePingsTcp(catalog).timeout(const Duration(seconds: 12));
+      return await service.measureNodePingsHttp(catalog).timeout(const Duration(seconds: 14));
     } on TimeoutException {
       return const {};
     }

@@ -9,6 +9,7 @@ import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_country_flag.dart';
@@ -83,14 +84,14 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('انتخاب کانفیگ', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    Text('انتخاب سرور', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                     const Gap(4),
                     Text(
                       smartPicking
-                          ? 'در حال انتخاب بهترین کانفیگ…'
+                          ? 'در حال انتخاب بهترین سرور…'
                           : vpnConnected
-                              ? 'متصل هستید — تغییر کانفیگ ممکن است اتصال را عوض کند'
-                              : 'اتصال هوشمند یا یک کانفیگ را انتخاب کنید',
+                              ? 'متصل هستید — تغییر سرور ممکن است اتصال را عوض کند'
+                              : 'اتصال هوشمند یا یک سرور را انتخاب کنید',
                       style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
                     ),
                   ],
@@ -101,7 +102,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                   onPressed: measuringPing
                       ? null
                       : () => ref.read(tikNetNodePingsProvider.notifier).measure(),
-                  tooltip: vpnConnected ? 'پینگ همه کانفیگ‌ها (urltest)' : 'پینگ دسترسی (TCP)',
+                  tooltip: vpnConnected ? 'پینگ واقعی سرورها (urltest)' : 'پینگ HTTP سرورها',
                   icon: measuringPing
                       ? const SizedBox(
                           width: 22,
@@ -150,7 +151,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                   if (showSub || showCatalog) ...[
                     _ServerRow(
                       title: 'اتصال هوشمند',
-                      subtitle: 'پینگ همه کانفیگ‌ها و اتصال به سریع‌ترین',
+                      subtitle: 'پینگ همه سرورها و اتصال به سریع‌ترین',
                       personal: true,
                       smart: true,
                       selected: selectionIsSmart(selected),
@@ -163,8 +164,8 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                       ),
                     if (hasAnyConfigRows) ...[
-                      const _SectionHeader(title: 'همه کانفیگ‌ها'),
-                      ...nodes.map((node) {
+                      const _SectionHeader(title: 'همه سرورها'),
+                      ...sortNodesByPing(nodes, nodePings).map((node) {
                         final ping = nodePings[node.tag];
                         final badge = node.isCatalog ? 'کاتالوگ' : 'اشتراک';
                         final selectedNode = selected.isPersonal &&
@@ -246,7 +247,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                       const Padding(
                         padding: EdgeInsets.all(16),
                         child: Text(
-                          'کانفیگ هنوز آماده نیست. از حساب من → بروزرسانی بزنید.',
+                          'سرور هنوز آماده نیست. از حساب من → بروزرسانی بزنید.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: TikNetColors.onSurfaceVariant, fontSize: 13),
                         ),
@@ -254,7 +255,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                   ] else
                     const Padding(
                       padding: EdgeInsets.all(32),
-                      child: Text('کانفیگی برای نمایش تنظیم نشده است.', textAlign: TextAlign.center),
+                      child: Text('سروری برای نمایش تنظیم نشده است.', textAlign: TextAlign.center),
                     ),
                 ],
               );
@@ -278,7 +279,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     ref.invalidate(personalOutboundProvider);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('در حال اعمال کانفیگ…'), behavior: SnackBarBehavior.floating),
+      const SnackBar(content: Text('در حال اعمال سرور…'), behavior: SnackBarBehavior.floating),
     );
     try {
       final ok = await sync.applySelectedServerConfig();
@@ -286,7 +287,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok ? 'کانفیگ انتخاب شد.' : 'اعمال کانفیگ ناموفق بود.'),
+          content: Text(ok ? 'سرور انتخاب شد.' : 'اعمال سرور ناموفق بود.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -493,7 +494,7 @@ class TikNetServerSelectorCard extends ConsumerWidget {
                       Row(
                         children: [
                           Text(
-                            'کانفیگ انتخابی',
+                            'سرور انتخابی',
                             style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
                           ),
                           const Spacer(),

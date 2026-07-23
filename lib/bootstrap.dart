@@ -12,6 +12,7 @@ import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/logger/logger.dart';
 import 'package:hiddify/core/logger/logger_controller.dart';
 import 'package:hiddify/core/model/environment.dart';
+import 'package:hiddify/core/model/region.dart';
 import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/preferences/preferences_migration.dart';
@@ -22,6 +23,7 @@ import 'package:hiddify/features/auto_start/notifier/auto_start_notifier.dart';
 import 'package:hiddify/features/log/data/log_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/system_tray/notifier/system_tray_notifier.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_session_guard.dart';
@@ -79,6 +81,12 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
       final dirs = await container.read(appDirectoriesProvider.future);
       TikNetDiagnosticLog.init(dirs.workingDir);
     });
+    // Bypass IR IPs/domains via core remote rule-sets (geoip-ir / geosite-ir).
+    await _init("tiknet region ir", () async {
+      if (container.read(ConfigOptions.region) != Region.ir) {
+        await container.read(ConfigOptions.region.notifier).update(Region.ir);
+      }
+    });
     await _init("tiknet session", () => reconcileTikNetSession(container));
   }
 
@@ -109,12 +117,6 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
   await _init("hiddify-core", () => container.read(hiddifyCoreServiceProvider).init());
 
   if (!kIsWeb) {
-    // await _safeInit(
-    //   "deep link service",
-    //   () => container.read(deepLinkNotifierProvider.future),
-    //   timeout: 1000,
-    // );
-
     if (PlatformUtils.isDesktop) {
       await _safeInit("system tray", () => container.read(systemTrayNotifierProvider.future), timeout: 1000);
     }
@@ -140,7 +142,6 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
   if (!kIsWeb) {
     FlutterNativeSplash.remove();
   }
-  // SentryFlutter.s(DateTime.now().toUtc());
 }
 
 Future<T> _init<T>(String name, Future<T> Function() initializer, {int? timeout}) async {

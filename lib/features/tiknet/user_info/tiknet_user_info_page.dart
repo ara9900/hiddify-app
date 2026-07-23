@@ -10,8 +10,6 @@ import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_notification_service.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
-import 'package:hiddify/features/tiknet/user_info/tiknet_diagnostic_page.dart';
 import 'package:hiddify/features/tiknet/user_info/tiknet_logout_dialog.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hiddify/utils/uri_utils.dart';
@@ -85,10 +83,9 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
     final expired = profile?.isExpired ?? sync.isSubscriptionExpired();
     final hasSubscription = profile?.hasSubscription ?? false;
 
-    final displayName = profile?.fullName?.trim().isNotEmpty == true ? profile!.fullName! : profile?.username ?? '—';
-    final username = profile?.username ?? '—';
-    final trimmedName = displayName.trim();
-    final initial = trimmedName.isNotEmpty ? trimmedName.substring(0, 1) : '؟';
+    final username = (profile?.username ?? '').trim().isNotEmpty ? profile!.username.trim() : '—';
+    final fullName = profile?.fullName?.trim();
+    final initial = username != '—' ? username.substring(0, 1) : '؟';
 
     return Scaffold(
       backgroundColor: TikNetColors.background,
@@ -149,20 +146,22 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(displayName, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                              const Gap(4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: TikNetColors.surface,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: TikNetColors.border),
-                                ),
-                                child: Text(
-                                  username,
-                                  style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
-                                ),
+                              Text(
+                                'نام کاربری',
+                                style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
                               ),
+                              const Gap(2),
+                              Text(
+                                username,
+                                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              if (fullName != null && fullName.isNotEmpty && fullName != username) ...[
+                                const Gap(4),
+                                Text(
+                                  fullName,
+                                  style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -213,27 +212,6 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
                       icon: Icons.help_outline_rounded,
                       label: 'راهنما و سوالات',
                       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TikNetFaqPage())),
-                    ),
-                    const Divider(height: 1, indent: 56),
-                    _ActionTile(
-                      icon: Icons.article_outlined,
-                      label: 'گزارش تشخیصی (لاگ)',
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TikNetDiagnosticPage())),
-                    ),
-                    const Divider(height: 1, indent: 56),
-                    _ActionTile(
-                      icon: Icons.bug_report_outlined,
-                      label: 'ارسال گزارش خطا به پنل',
-                      onTap: () async {
-                        await ref.read(tikNetTelemetryServiceProvider).reportUserIssue(
-                          message: 'manual_report_from_account',
-                          context: 'user_info_page',
-                        );
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('گزارش خطا به پنل ارسال شد.')),
-                        );
-                      },
                     ),
                   ],
                 ),

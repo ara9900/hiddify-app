@@ -2,6 +2,7 @@ import 'package:dartx/dartx.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/model/optional_range.dart';
 import 'package:hiddify/core/model/region.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
 import 'package:hiddify/core/utils/json_converters.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
@@ -32,7 +33,8 @@ abstract class ConfigOptions {
 
   static final region = PreferencesNotifier.create<Region, String>(
     "region",
-    Region.other,
+    // TikNet: IR bypass (geoip/geosite-ir + .ir) via hiddify-core remote rule-sets.
+    tikNetMode ? Region.ir : Region.other,
     mapFrom: Region.values.byName,
     mapTo: (value) => value.name,
   );

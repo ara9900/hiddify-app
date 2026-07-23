@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
@@ -22,7 +23,7 @@ String urlTestGroupTagForCatalog(TikNetPersonalOutboundCatalog catalog) {
   return '';
 }
 
-/// Latency via sing-box urltest when core is up; otherwise TCP connect to outbound host:port.
+/// Latency via sing-box urltest when core is up; otherwise HTTP probe to outbound host.
 class TikNetClientPingService {
   TikNetClientPingService(this._ref);
 
@@ -43,13 +44,13 @@ class TikNetClientPingService {
     );
   }
 
-  /// TCP connect to each node's probe host:port (works without VPN / core).
-  Future<Map<String, TikNetClientPingResult>> measureNodePingsTcp(
+  /// HTTP HEAD/GET to each node's probe URL (works without VPN / core).
+  Future<Map<String, TikNetClientPingResult>> measureNodePingsHttp(
     TikNetPersonalOutboundCatalog catalog, {
-    Duration timeout = const Duration(seconds: 2),
+    Duration timeout = const Duration(seconds: 3),
     int concurrency = 4,
   }) {
-    return measureNodesTcp(catalog.nodes, timeout: timeout, concurrency: concurrency);
+    return measureNodesHttp(catalog.nodes, timeout: timeout, concurrency: concurrency);
   }
 
   /// urltest on [groupTag] then read [OutboundInfo.urlTestDelay] per node tag.
@@ -116,7 +117,7 @@ class TikNetClientPingService {
         continue;
       }
       if (delay <= 0 || delay >= 65000) {
-        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
         continue;
       }
       out[node.tag] = TikNetClientPingResult(
@@ -128,16 +129,50 @@ class TikNetClientPingService {
   }
 }
 
-/// Pure TCP reachability map (unit-testable without Riverpod / VPN core).
-Future<Map<String, TikNetClientPingResult>> measureNodesTcp(
+/// Sort nodes by ping ascending (reachable first); missing / unreachable last.
+List<TikNetPersonalProxyNode> sortNodesByPing(
+  List<TikNetPersonalProxyNode> nodes,
+  Map<String, TikNetClientPingResult> pings,
+) {
+  if (nodes.isEmpty || pings.isEmpty) return nodes;
+  final copy = List<TikNetPersonalProxyNode>.from(nodes);
+  int rank(TikNetClientPingResult? p) {
+    if (p == null) return 3;
+    return switch (p.state) {
+      TikNetClientPingState.reachable => 0,
+      TikNetClientPingState.measuring => 1,
+      TikNetClientPingState.noTarget => 2,
+      TikNetClientPingState.unreachable => 3,
+    };
+  }
+
+  copy.sort((a, b) {
+    final pa = pings[a.tag];
+    final pb = pings[b.tag];
+    final ra = rank(pa);
+    final rb = rank(pb);
+    if (ra != rb) return ra.compareTo(rb);
+    final ma = pa?.pingMs ?? 1 << 30;
+    final mb = pb?.pingMs ?? 1 << 30;
+    final byMs = ma.compareTo(mb);
+    if (byMs != 0) return byMs;
+    return a.label.compareTo(b.label);
+  });
+  return copy;
+}
+
+/// Pure HTTP reachability map (unit-testable without Riverpod / VPN core).
+Future<Map<String, TikNetClientPingResult>> measureNodesHttp(
   List<TikNetPersonalProxyNode> nodes, {
-  Duration timeout = const Duration(seconds: 2),
+  Duration timeout = const Duration(seconds: 3),
   int concurrency = 4,
+  Future<TikNetClientPingResult> Function(String probeUrl, {Duration timeout})? probe,
 }) async {
   if (nodes.isEmpty) return const {};
   final out = <String, TikNetClientPingResult>{};
   var next = 0;
   final workers = concurrency.clamp(1, 8);
+  final run = probe ?? httpPingProbeUrl;
 
   Future<void> worker() async {
     while (true) {
@@ -145,7 +180,7 @@ Future<Map<String, TikNetClientPingResult>> measureNodesTcp(
       next++;
       if (i >= nodes.length) return;
       final node = nodes[i];
-      out[node.tag] = await tcpPingProbeUrl(node.probeUrl, timeout: timeout);
+      out[node.tag] = await run(node.probeUrl, timeout: timeout);
     }
   }
 
@@ -153,32 +188,65 @@ Future<Map<String, TikNetClientPingResult>> measureNodesTcp(
   return out;
 }
 
-Future<TikNetClientPingResult> tcpPingProbeUrl(
+Future<TikNetClientPingResult> httpPingProbeUrl(
   String probeUrl, {
-  Duration timeout = const Duration(seconds: 2),
+  Duration timeout = const Duration(seconds: 3),
 }) async {
-  final target = parseProbeTarget(probeUrl);
-  if (target == null) {
+  final url = probeUrl.trim();
+  if (url.isEmpty) {
     return const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
   }
+  final uri = Uri.tryParse(url);
+  if (uri == null || uri.host.isEmpty) {
+    return const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+  }
+
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: timeout,
+      receiveTimeout: timeout,
+      sendTimeout: timeout,
+      followRedirects: true,
+      validateStatus: (_) => true,
+      responseType: ResponseType.bytes,
+      headers: const {'User-Agent': 'TikNet-Ping/1.0'},
+    ),
+  );
+
   final sw = Stopwatch()..start();
   try {
-    final socket = await Socket.connect(target.host, target.port, timeout: timeout)
-        .timeout(timeout);
-    sw.stop();
+    Response<List<int>> response;
     try {
-      await socket.close();
-    } catch (_) {}
-    return TikNetClientPingResult(
-      state: TikNetClientPingState.reachable,
-      pingMs: sw.elapsedMilliseconds.clamp(1, 60000),
-    );
+      response = await dio.headUri(uri);
+    } on DioException {
+      response = await dio.getUri(uri);
+    }
+    sw.stop();
+    // Any HTTP response means the endpoint answered.
+    if (response.statusCode != null && response.statusCode! > 0) {
+      return TikNetClientPingResult(
+        state: TikNetClientPingState.reachable,
+        pingMs: sw.elapsedMilliseconds.clamp(1, 60000),
+      );
+    }
+    return const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
+  } on DioException catch (e) {
+    sw.stop();
+    if (e.response?.statusCode != null && e.response!.statusCode! > 0) {
+      return TikNetClientPingResult(
+        state: TikNetClientPingState.reachable,
+        pingMs: sw.elapsedMilliseconds.clamp(1, 60000),
+      );
+    }
+    return const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
   } on SocketException {
     return const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
   } on TimeoutException {
     return const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
   } catch (_) {
     return const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
+  } finally {
+    dio.close(force: true);
   }
 }
 

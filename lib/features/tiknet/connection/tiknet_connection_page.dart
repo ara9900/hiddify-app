@@ -74,7 +74,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
     final isDisconnecting = connectionStatus.valueOrNull is Disconnecting;
 
     final statusLabel = switch (connectionStatus) {
-      AsyncData(value: Connected()) when smartPicking => 'انتخاب بهترین کانفیگ…',
+      AsyncData(value: Connected()) when smartPicking => 'انتخاب بهترین سرور…',
       AsyncData(value: Connected()) when requiresReconnect => 'نیاز به بروزرسانی',
       AsyncData(value: Connected()) => 'متصل به اینترنت',
       AsyncData(value: Connecting()) => 'در حال اتصال…',
@@ -88,7 +88,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
       _ => TikNetColors.disconnected,
     };
     final statusHint = switch (connectionStatus) {
-      AsyncData(value: Connected()) when smartPicking => 'پینگ کانفیگ‌ها در حال اندازه‌گیری است',
+      AsyncData(value: Connected()) when smartPicking => 'پینگ سرورها در حال اندازه‌گیری است',
       AsyncData(value: Connected()) => 'ترافیک شما از طریق VPN عبور می‌کند',
       AsyncData(value: Connecting()) => 'لطفاً چند ثانیه صبر کنید',
       AsyncData(value: Disconnecting()) => 'در حال قطع اتصال',
@@ -184,7 +184,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('در حال دریافت کانفیگ از پنل…'),
+                                    content: Text('در حال دریافت سرور از پنل…'),
                                     behavior: SnackBarBehavior.floating,
                                   ),
                                 );
@@ -196,7 +196,7 @@ class TikNetConnectionPage extends HookConsumerWidget {
                                   if (!ok || ref.read(activeProfileProvider).valueOrNull == null) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text('کانفیگ آماده نیست. از حساب من → بروزرسانی تلاش کنید.'),
+                                        content: Text('سرور آماده نیست. از حساب من → بروزرسانی تلاش کنید.'),
                                         behavior: SnackBarBehavior.floating,
                                       ),
                                     );

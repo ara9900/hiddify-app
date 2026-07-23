@@ -132,7 +132,7 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
     return TikNetPersonalNodesState(
       catalog: null,
       nodePings: const {},
-      parseHint: 'لیست کانفیگ آماده نیست. از حساب من → بروزرسانی را بزنید.',
+      parseHint: 'لیست سرور آماده نیست. از حساب من → بروزرسانی را بزنید.',
     );
   }
 

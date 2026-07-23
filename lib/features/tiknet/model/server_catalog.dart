@@ -273,7 +273,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
         final ping = personalNodePings?[locked];
         return TikNetSelectedServerInfo(
           title: 'اتصال هوشمند',
-          subtitle: node != null ? 'متصل به ${node.label}' : 'بهترین کانفیگ بر اساس پینگ',
+          subtitle: node != null ? 'متصل به ${node.label}' : 'بهترین سرور بر اساس پینگ',
           personal: true,
           pingLabel: ping?.pingLabel,
           pingColor: ping?.pingColor,
@@ -282,7 +282,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
       }
       return const TikNetSelectedServerInfo(
         title: 'اتصال هوشمند',
-        subtitle: 'پینگ همه کانفیگ‌ها → سریع‌ترین',
+        subtitle: 'پینگ همه سرورها → سریع‌ترین',
         personal: true,
       );
     }
@@ -316,7 +316,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
     }
     return const TikNetSelectedServerInfo(
       title: 'اتصال هوشمند',
-      subtitle: 'پینگ همه کانفیگ‌ها → سریع‌ترین',
+      subtitle: 'پینگ همه سرورها → سریع‌ترین',
       personal: true,
     );
   }
