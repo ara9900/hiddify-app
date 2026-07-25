@@ -26,6 +26,48 @@ void main() {
     expect(parseProbeTarget('https://de.example.com'), (host: 'de.example.com', port: 443));
   });
 
+  test('measureNodesTcp marks reachable, unreachable, and noTarget', () async {
+    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() async {
+      await server.close();
+    });
+    server.listen((socket) async {
+      await socket.close();
+    });
+
+    final nodes = [
+      TikNetPersonalProxyNode(
+        tag: 'ok',
+        groupTag: 'Select',
+        label: 'ok',
+        probeUrl: 'https://127.0.0.1:${server.port}',
+      ),
+      const TikNetPersonalProxyNode(
+        tag: 'bad',
+        groupTag: 'Select',
+        label: 'bad',
+        probeUrl: 'https://127.0.0.1:1',
+      ),
+      const TikNetPersonalProxyNode(
+        tag: 'none',
+        groupTag: 'Select',
+        label: 'none',
+        probeUrl: '',
+      ),
+    ];
+
+    final results = await measureNodesTcp(
+      nodes,
+      timeout: const Duration(seconds: 2),
+      concurrency: 3,
+    );
+
+    expect(results['ok']?.state, TikNetClientPingState.reachable);
+    expect(results['ok']?.pingMs, greaterThan(0));
+    expect(results['bad']?.state, TikNetClientPingState.unreachable);
+    expect(results['none']?.state, TikNetClientPingState.noTarget);
+  });
+
   test('measureNodesHttp marks reachable, unreachable, and noTarget', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() async {

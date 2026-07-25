@@ -98,6 +98,15 @@ class TikNetClientPingService {
     return _delaysFromGroup(group, nodes);
   }
 
+  /// TCP connect to each node's host:port — never starts VPN.
+  Future<Map<String, TikNetClientPingResult>> measureNodePingsTcp(
+    TikNetPersonalOutboundCatalog catalog, {
+    Duration timeout = const Duration(seconds: 3),
+    int concurrency = 6,
+  }) {
+    return measureNodesTcp(catalog.nodes, timeout: timeout, concurrency: concurrency);
+  }
+
   Map<String, TikNetClientPingResult> _delaysFromGroup(
     OutboundGroup? group,
     List<TikNetPersonalProxyNode> nodes,
@@ -159,6 +168,49 @@ List<TikNetPersonalProxyNode> sortNodesByPing(
     return a.label.compareTo(b.label);
   });
   return copy;
+}
+
+/// Pure TCP reachability map (unit-testable; no VPN / core).
+Future<Map<String, TikNetClientPingResult>> measureNodesTcp(
+  List<TikNetPersonalProxyNode> nodes, {
+  Duration timeout = const Duration(seconds: 3),
+  int concurrency = 6,
+}) async {
+  if (nodes.isEmpty) return const {};
+  final out = <String, TikNetClientPingResult>{};
+  var index = 0;
+  Future<void> worker() async {
+    while (true) {
+      final i = index++;
+      if (i >= nodes.length) return;
+      final node = nodes[i];
+      final target = parseProbeTarget(node.probeUrl);
+      if (target == null) {
+        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+        continue;
+      }
+      final sw = Stopwatch()..start();
+      try {
+        final socket = await Socket.connect(target.host, target.port, timeout: timeout);
+        sw.stop();
+        await socket.close();
+        out[node.tag] = TikNetClientPingResult(
+          state: TikNetClientPingState.reachable,
+          pingMs: sw.elapsedMilliseconds.clamp(1, 60000),
+        );
+      } on SocketException {
+        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
+      } on TimeoutException {
+        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
+      } catch (_) {
+        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
+      }
+    }
+  }
+
+  final workers = List.generate(concurrency.clamp(1, 16), (_) => worker());
+  await Future.wait(workers);
+  return out;
 }
 
 /// Pure HTTP reachability map (unit-testable without Riverpod / VPN core).

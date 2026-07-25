@@ -514,8 +514,16 @@ get-geo-assets:
 build-headers:
 	make -C hiddify-core -f Makefile headers && mv $(BINDIR)/$(CORE_NAME)-headers.h $(BINDIR)/hiddify-core.h
 
+# TikNet: patch vendored ray2sing (Reality / Xray conversion). See docs/REALITY_RAY2SING.md
+patch-ray2sing:
+	bash scripts/apply-ray2sing-patches.sh
+
+prepare-patched-core:
+	bash scripts/prepare-patched-core.sh
+
 build-android-libs:
-	make -C hiddify-core -f Makefile android 
+	$(MKDIR) $(ANDROID_OUT) || echo Folder already exists. Skipping...
+	make -C hiddify-core -f Makefile android
 	mv $(BINDIR)/$(LIB_NAME).aar $(ANDROID_OUT)/
 
 build-windows-libs:

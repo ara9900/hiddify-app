@@ -1,0 +1,35 @@
+diff --git a/ray2sing/convert.go b/ray2sing/convert.go
+index 6c946d7..b3a3dd3 100644
+--- a/ray2sing/convert.go
++++ b/ray2sing/convert.go
+@@ -87,7 +87,7 @@ func processSingleConfig(config string, useXrayWhenPossible bool) (outend *OutEn
+ 	}()
+ 	// configDecoded := decodeUrlBase64IfNeeded(config)
+ 	outend = &OutEnd{}
+-	if false && (useXrayWhenPossible || strings.Contains(config, "&core=xray")) {
++	if useXrayWhenPossible || strings.Contains(config, "&core=xray") {
+ 		for k, v := range xrayConfigTypes {
+ 			if strings.HasPrefix(config, k) {
+ 				outend.outbound, err = v(config)
+diff --git a/ray2sing/xray_common.go b/ray2sing/xray_common.go
+index 5f06bf7..78480e6 100644
+--- a/ray2sing/xray_common.go
++++ b/ray2sing/xray_common.go
+@@ -268,7 +268,7 @@ func getTLSOptionsXray(decoded map[string]string) map[string]any {
+ 
+ 	fp := decoded["fp"]
+ 	if fp == "" {
+-		// fp = "chrome"
++		fp = "chrome"
+ 	}
+ 	allowInsecure := false
+ 	if insecure, err := getOneOf(decoded, "insecure", "allowinsecure"); err == nil {
+@@ -302,7 +302,7 @@ func getRealityOptionsXray(decoded map[string]string) map[string]any {
+ 
+ 	fp := decoded["fp"]
+ 	if fp == "" {
+-		// fp = "chrome"
++		fp = "chrome"
+ 	}
+ 
+ 	return map[string]any{

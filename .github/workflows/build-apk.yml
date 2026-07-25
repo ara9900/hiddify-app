@@ -2,14 +2,23 @@ name: Build APK
 
 on:
   workflow_dispatch:
+    inputs:
+      build_patched_core:
+        description: "Build AAR from patched ray2sing (Reality/Xray). Slow; needs Go+NDK."
+        type: boolean
+        default: false
 
 env:
   IS_GITHUB_ACTIONS: 1
   CHANNEL: "dev"
   FLUTTER_VERSION: '3.38.5'
   NDK_VERSION: r28c
+  # Match hiddify-core go.mod at HIDDIFY_CORE_COMMIT (gomobile AAR build).
+  GO_VERSION: '1.25.6'
   HIDDIFY_CORE_COMMIT: a82d2b8f047ce769caad42ad9d3ab2c0ef53208a
-  # Pin libbox AAR; "draft" floats and breaks Android PlatformInterface (e.g. closeNeighborMonitor).
+  RAY2SING_COMMIT: c0c298d371a0bcfbcc70a6276153178ec6e9c4e1
+  SINGBOX_COMMIT: 3a1c923e306d5b39cde8f2c02ec9dd556ea112d3
+  # Pin libbox AAR when not building from source; "draft" floats and breaks Android PlatformInterface.
   CORE_AAR_URL: https://github.com/hiddify/hiddify-next-core/releases/download/v4.1.0
 
 jobs:
@@ -22,18 +31,30 @@ jobs:
       - name: Checkout app
         uses: actions/checkout@v4
 
-      - name: Clone hiddify-core and build deps
+      - name: Clone hiddify-core deps (HTTPS, pinned)
         run: |
-          rm -rf hiddify-core hiddify-sing-box ray2sing
-          git clone --depth 1 https://github.com/hiddify/hiddify-core.git hiddify-core
-          cd hiddify-core
-          git fetch --depth 1 origin "${HIDDIFY_CORE_COMMIT}"
-          git checkout "${HIDDIFY_CORE_COMMIT}"
-          cd ..
-          git clone --depth 1 https://github.com/hiddify/hiddify-sing-box.git hiddify-sing-box
-          git clone --depth 1 https://github.com/hiddify/ray2sing.git ray2sing
+          set -euo pipefail
+          rm -rf hiddify-core
+          git clone --filter=blob:none https://github.com/hiddify/hiddify-core.git hiddify-core
+          git -C hiddify-core fetch --depth 1 origin "${HIDDIFY_CORE_COMMIT}"
+          git -C hiddify-core checkout "${HIDDIFY_CORE_COMMIT}"
+
+          # go.mod: replace ray2sing => ./ray2sing (must be inside hiddify-core)
+          rm -rf hiddify-core/ray2sing
+          git clone https://github.com/hiddify/ray2sing.git hiddify-core/ray2sing
+          git -C hiddify-core/ray2sing checkout "${RAY2SING_COMMIT}"
+
+          rm -rf hiddify-core/hiddify-sing-box
+          git clone https://github.com/hiddify/hiddify-sing-box.git hiddify-core/hiddify-sing-box
+          git -C hiddify-core/hiddify-sing-box fetch --depth 1 origin "${SINGBOX_COMMIT}" || true
+          git -C hiddify-core/hiddify-sing-box checkout "${SINGBOX_COMMIT}"
+
           echo "✅ hiddify-core @ ${HIDDIFY_CORE_COMMIT}"
-          ls hiddify-core/
+          echo "✅ ray2sing @ $(git -C hiddify-core/ray2sing rev-parse --short HEAD)"
+          echo "✅ hiddify-sing-box @ $(git -C hiddify-core/hiddify-sing-box rev-parse --short HEAD)"
+
+      - name: Apply ray2sing Reality/Xray patches
+        run: bash scripts/apply-ray2sing-patches.sh
 
       - name: Clean up disk
         run: |
@@ -61,6 +82,15 @@ jobs:
           distribution: 'zulu'
           java-version: 17
 
+      - name: Setup Go
+        if: ${{ inputs.build_patched_core }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            hiddify-core/go.sum
+            hiddify-core/hiddify-sing-box/go.sum
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2.21.0
         with:
@@ -70,6 +100,14 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK
+        if: ${{ inputs.build_patched_core }}
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          link-to-sdk: true
 
       - name: Setup signing keystore from secrets
         env:
@@ -96,8 +134,28 @@ jobs:
           make android-apk-install-deps || make android-aab-install-deps
           echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
 
-      - name: Prepare
+      - name: Prepare (geo + prebuilt AAR when not building patched core)
+        if: ${{ !inputs.build_patched_core }}
         run: make android-apk-prepare CORE_URL="${{ env.CORE_AAR_URL }}" || make android-aab-prepare CORE_URL="${{ env.CORE_AAR_URL }}"
+
+      - name: Prepare geo assets only (patched AAR path)
+        if: ${{ inputs.build_patched_core }}
+        run: |
+          make common-prepare
+          make get-geo-assets || true
+          mkdir -p android/app/libs
+
+      - name: Build patched Android AAR
+        if: ${{ inputs.build_patched_core }}
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          # gomobile / node bits used by hiddify-core Makefile
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq npm >/dev/null
+          make build-android-libs
+          ls -lh android/app/libs/
 
       - name: Fix TikNet PNGs for AAPT2
         run: |
@@ -132,6 +190,12 @@ jobs:
           cp ./build/app/outputs/flutter-apk/app-release.apk "out/TikNet-universal-${APP_VERSION}.apk" 2>/dev/null || true
           echo "=== APK Files ==="
           ls -lh out/
+          if [ "${{ inputs.build_patched_core }}" = "true" ]; then
+            echo "core=patched-ray2sing" > out/build-info.txt
+          else
+            echo "core=prebuilt-${{ env.CORE_AAR_URL }}" > out/build-info.txt
+          fi
+          cat out/build-info.txt
 
       - name: Upload ARM64 (گوشی‌های جدید)
         uses: actions/upload-artifact@v4
@@ -164,3 +228,10 @@ jobs:
           path: ./out/TikNet-universal-*.apk
           retention-days: 30
         if: hashFiles('./out/TikNet-universal-*.apk') != ''
+
+      - name: Upload build-info
+        uses: actions/upload-artifact@v4
+        with:
+          name: TikNet-build-info
+          path: ./out/build-info.txt
+          retention-days: 30

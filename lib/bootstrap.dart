@@ -87,6 +87,17 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
         await container.read(ConfigOptions.region.notifier).update(Region.ir);
       }
     });
+    // One-shot Reality-safe defaults (mux/TLS tricks off; enable Xray conversion when AAR is patched).
+    await _init("tiknet reality-safe defaults", () async {
+      final prefs = container.read(sharedPreferencesProvider).requireValue;
+      if (prefs.getBool('tiknet_reality_defaults_v1') == true) return;
+      await container.read(ConfigOptions.enableMux.notifier).update(false);
+      await container.read(ConfigOptions.enableTlsFragment.notifier).update(false);
+      await container.read(ConfigOptions.enableTlsMixedSniCase.notifier).update(false);
+      await container.read(ConfigOptions.enableTlsPadding.notifier).update(false);
+      await container.read(ConfigOptions.useXrayCoreWhenPossible.notifier).update(true);
+      await prefs.setBool('tiknet_reality_defaults_v1', true);
+    });
     await _init("tiknet session", () => reconcileTikNetSession(container));
   }
 

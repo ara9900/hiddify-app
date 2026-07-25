@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_brand.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_faq.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_notification.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_referral.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// Thrown when panel returns 4xx/5xx with optional [detail] from response body.
 class TikNetApiException implements Exception {
@@ -331,6 +332,50 @@ class TikNetApi {
     } on DioException catch (e) {
       final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
       final msg = detail is String ? detail : (e.message ?? 'دریافت کانفیگ سرور ناموفق');
+      throw TikNetApiException(msg, statusCode: e.response?.statusCode);
+    }
+  }
+
+  /// GET /api/customer/referral
+  Future<TikNetReferralInfo> getReferral({
+    required String baseUrl,
+    required String accessToken,
+  }) async {
+    final dio = _dio(baseUrl);
+    try {
+      final response = await dio.get<Map<String, dynamic>>(
+        '/api/customer/referral',
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      if (response.data == null) throw TikNetApiException('Empty response');
+      return TikNetReferralInfo.fromJson(response.data!);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
+      final msg = detail is String ? detail : (e.message ?? 'دریافت اطلاعات معرف ناموفق');
+      throw TikNetApiException(msg, statusCode: e.response?.statusCode);
+    }
+  }
+
+  /// POST /api/customer/referral/attach
+  Future<TikNetReferralAttachResult> attachReferral({
+    required String baseUrl,
+    required String accessToken,
+    required String referralCode,
+  }) async {
+    final dio = _dio(baseUrl);
+    try {
+      final response = await dio.post<Map<String, dynamic>>(
+        '/api/customer/referral/attach',
+        data: {'referral_code': referralCode.trim()},
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      if (response.data == null) {
+        return TikNetReferralAttachResult(ok: true, attachedReferrerCode: referralCode.trim());
+      }
+      return TikNetReferralAttachResult.fromJson(response.data!);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
+      final msg = detail is String ? detail : (e.message ?? 'ثبت کد معرف ناموفق');
       throw TikNetApiException(msg, statusCode: e.response?.statusCode);
     }
   }

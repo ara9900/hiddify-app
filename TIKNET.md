@@ -7,6 +7,8 @@ This app is customized for **TikNet**: login with panel account, 3 tabs only (Co
 - **App name:** TikNet  
 - **Package (Android):** `com.tik.net`  
 - **Bundle ID (iOS):** `com.tik.net`
+- **Version:** see `pubspec.yaml` (currently `4.2.32`)
+- **Reality / ray2sing AAR patch:** [docs/REALITY_RAY2SING.md](docs/REALITY_RAY2SING.md) — CI input `build_patched_core`
 
 **امضای ثابت (نصب روی نسخهٔ قبلی):** keystore داخل ریپو نیست؛ از **GitHub Secrets** استفاده می‌شود. یک بار keystore را بساز، به base64 تبدیل کن و در ریپو اضافه کن (پایین همین فایل).
 
