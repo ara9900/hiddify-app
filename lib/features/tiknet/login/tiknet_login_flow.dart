@@ -53,3 +53,17 @@ Future<void> performTikNetLogin({
   }
   if (context.mounted) await completeTikNetLoginFlow(ref, context);
 }
+
+Future<void> performTikNetLoginWithToken({
+  required WidgetRef ref,
+  required BuildContext context,
+  required String token,
+  String? panelBaseUrl,
+}) async {
+  final auth = ref.read(authServiceProvider);
+  await auth.loginWithToken(token, panelBaseUrl: panelBaseUrl);
+  if (Platform.isAndroid) {
+    await ref.read(tikNetAppUpdateNotifierProvider.notifier).checkForUpdate(forceRefresh: true);
+  }
+  if (context.mounted) await completeTikNetLoginFlow(ref, context);
+}

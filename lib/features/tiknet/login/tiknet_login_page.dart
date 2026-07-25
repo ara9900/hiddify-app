@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
+import 'package:hiddify/core/router/deep_linking/my_app_links.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/tiknet/login/tiknet_login_flow.dart';
 import 'package:hiddify/features/tiknet/login/tiknet_qr_login_parser.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_public_config.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/config_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
+import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class TikNetLoginPage extends HookConsumerWidget {
@@ -22,17 +27,8 @@ class TikNetLoginPage extends HookConsumerWidget {
     final errorMsg = useState<String?>(null);
     final panelReady = useState(false);
     final panelReachable = useState(true);
-
-    useEffect(() {
-      ref.read(configServiceProvider).getFirstWorkingPanelUrl().then((url) {
-        panelReady.value = true;
-        panelReachable.value = url.isNotEmpty;
-      }).catchError((_) {
-        panelReady.value = true;
-        panelReachable.value = false;
-      });
-      return null;
-    }, []);
+    final publicConfig = useState(const TikNetPublicConfig());
+    final deepLinkHandled = useRef(false);
 
     Future<void> runLogin({required String username, required String password, String? panelBaseUrl}) async {
       errorMsg.value = null;
@@ -51,6 +47,78 @@ class TikNetLoginPage extends HookConsumerWidget {
         isLoading.value = false;
       }
     }
+
+    Future<void> runTokenLogin({required String token, String? panelBaseUrl}) async {
+      errorMsg.value = null;
+      isLoading.value = true;
+      try {
+        await performTikNetLoginWithToken(
+          ref: ref,
+          context: context,
+          token: token,
+          panelBaseUrl: panelBaseUrl,
+        );
+      } catch (e) {
+        errorMsg.value = e is AuthException ? e.message : e.toString().replaceFirst(RegExp('^Exception: '), '');
+      } finally {
+        isLoading.value = false;
+      }
+    }
+
+    Future<void> consumeLoginLink(String raw) async {
+      final payload = parseTikNetQrLogin(raw);
+      if (payload == null) return;
+      if (payload is TikNetQrLoginToken) {
+        await runTokenLogin(token: payload.token, panelBaseUrl: payload.panelUrl);
+        return;
+      }
+      if (payload case TikNetQrCredentials(:final username, :final password, :final panelUrl)) {
+        await runLogin(username: username, password: password, panelBaseUrl: panelUrl);
+      }
+    }
+
+    useEffect(() {
+      ref.read(configServiceProvider).getFirstWorkingPanelUrl().then((url) async {
+        panelReady.value = true;
+        panelReachable.value = url.isNotEmpty;
+        if (url.isNotEmpty) {
+          try {
+            publicConfig.value = await ref.read(tikNetApiProvider).getPublicConfig(baseUrl: url);
+          } catch (_) {
+            publicConfig.value = const TikNetPublicConfig();
+          }
+        }
+      }).catchError((_) {
+        panelReady.value = true;
+        panelReachable.value = false;
+      });
+      return null;
+    }, []);
+
+    useEffect(() {
+      Future<void> tryPending() async {
+        if (deepLinkHandled.value || isLoading.value) return;
+        final pending = pendingTikNetLoginLink;
+        if (pending == null || pending.isEmpty) return;
+        deepLinkHandled.value = true;
+        pendingTikNetLoginLink = null;
+        await consumeLoginLink(pending);
+      }
+
+      tryPending();
+      final sub = ref.listenManual(myAppLinksProvider, (_, next) {
+        final link = next.value;
+        if (link == null || !isTikNetLoginDeepLink(link)) return;
+        if (deepLinkHandled.value || isLoading.value) {
+          pendingTikNetLoginLink = link;
+          return;
+        }
+        deepLinkHandled.value = true;
+        pendingTikNetLoginLink = null;
+        consumeLoginLink(link);
+      });
+      return sub.close;
+    }, []);
 
     Future<void> doPasswordLogin() async {
       final username = usernameController.text.trim();
@@ -79,12 +147,18 @@ class TikNetLoginPage extends HookConsumerWidget {
         return;
       }
 
+      if (payload is TikNetQrLoginToken) {
+        await runTokenLogin(token: payload.token, panelBaseUrl: payload.panelUrl);
+        return;
+      }
+
       if (payload case TikNetQrCredentials(:final username, :final password, :final panelUrl)) {
         await runLogin(username: username, password: password, panelBaseUrl: panelUrl);
       }
     }
 
     final formEnabled = panelReady.value && panelReachable.value && !isLoading.value;
+    final shop = publicConfig.value;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -185,6 +259,23 @@ class TikNetLoginPage extends HookConsumerWidget {
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
+                    if (shop.showTelegramShop) ...[
+                      const Gap(12),
+                      FilledButton.tonalIcon(
+                        onPressed: formEnabled
+                            ? () => UriUtils.tryLaunch(Uri.parse(shop.telegramShopUrl!))
+                            : null,
+                        icon: const Icon(Icons.send_rounded),
+                        label: Text(
+                          (shop.telegramShopLabel?.trim().isNotEmpty == true)
+                              ? shop.telegramShopLabel!.trim()
+                              : 'خرید از ربات تلگرام',
+                        ),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ],
                     const Gap(8),
                     Text(
                       'QR ورود: username:password یا JSON با username و password',

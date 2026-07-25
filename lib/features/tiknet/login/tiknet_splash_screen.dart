@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/features/tiknet/login/tiknet_login_page.dart';
 
 /// TikNet branded splash — shown for [duration] before login.
@@ -12,11 +13,14 @@ class TikNetSplashScreen extends StatefulWidget {
 }
 
 class _TikNetSplashScreenState extends State<TikNetSplashScreen> {
-  bool _showLogin = false;
+  late bool _showLogin;
 
   @override
   void initState() {
     super.initState();
+    // Skip splash when opening from a login deep link (Telegram bot).
+    _showLogin = pendingTikNetLoginLink != null && pendingTikNetLoginLink!.isNotEmpty;
+    if (_showLogin) return;
     Future<void>.delayed(widget.duration, () {
       if (mounted) setState(() => _showLogin = true);
     });

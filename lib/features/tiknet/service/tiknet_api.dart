@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_brand.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_faq.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_notification.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_public_config.dart';
 import 'package:hiddify/features/tiknet/model/tiknet_referral.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// Thrown when panel returns 4xx/5xx with optional [detail] from response body.
@@ -148,6 +149,40 @@ class TikNetApi {
     } on DioException catch (e) {
       final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
       final msg = detail is String ? detail : (e.message ?? 'Login failed');
+      throw TikNetApiException(msg, statusCode: e.response?.statusCode);
+    }
+  }
+
+  /// POST /api/customer/login/token — one-time deep-link login.
+  Future<TikNetLoginResponse> loginWithToken({
+    required String baseUrl,
+    required String token,
+  }) async {
+    final dio = _dio(baseUrl);
+    try {
+      final response = await dio.post<Map<String, dynamic>>(
+        '/api/customer/login/token',
+        data: {'token': token.trim()},
+      );
+      if (response.data == null) throw TikNetApiException('Empty response');
+      return TikNetLoginResponse.fromJson(response.data!);
+    } on DioException catch (e) {
+      final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
+      final msg = detail is String ? detail : (e.message ?? 'ورود با لینک ناموفق');
+      throw TikNetApiException(msg, statusCode: e.response?.statusCode);
+    }
+  }
+
+  /// GET /api/customer/public-config — no auth (telegram shop flags, etc.).
+  Future<TikNetPublicConfig> getPublicConfig({required String baseUrl}) async {
+    final dio = _dio(baseUrl);
+    try {
+      final response = await dio.get<Map<String, dynamic>>('/api/customer/public-config');
+      return TikNetPublicConfig.fromJson(response.data);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return const TikNetPublicConfig();
+      final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
+      final msg = detail is String ? detail : (e.message ?? 'دریافت تنظیمات عمومی ناموفق');
       throw TikNetApiException(msg, statusCode: e.response?.statusCode);
     }
   }

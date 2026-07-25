@@ -94,6 +94,72 @@ class AuthService {
     }
   }
 
+  /// POST /api/customer/login/token — one-time deep link from Telegram bot.
+  Future<void> loginWithToken(String token, {String? panelBaseUrl}) async {
+    final trimmed = token.trim();
+    if (trimmed.isEmpty) {
+      throw AuthException('لینک ورود نامعتبر است');
+    }
+    final configService = _ref.read(configServiceProvider);
+    final resolved = panelBaseUrl?.trim();
+    final baseUrl = (resolved != null && resolved.isNotEmpty)
+        ? resolved.replaceAll(RegExp(r'/+$'), '')
+        : await configService.getFirstWorkingPanelUrl();
+    if (baseUrl.isEmpty) {
+      throw AuthException('اتصال به سرور ممکن نیست');
+    }
+
+    try {
+      final data = await _ref.read(tikNetApiProvider).loginWithToken(
+            baseUrl: baseUrl,
+            token: trimmed,
+          );
+      if (data.accessToken.isEmpty) {
+        throw AuthException('پاسخ سرور نامعتبر است');
+      }
+
+      final serverExpiry = data.expiresIn > 0 ? DateTime.now().add(Duration(seconds: data.expiresIn)) : null;
+      final clientExpiry = DateTime.now().add(tikNetSessionLifetime);
+      final expiresAt = _laterExpiry(serverExpiry, clientExpiry);
+
+      await _ref.read(Preferences.tikNetPanelBaseUrl.notifier).update(baseUrl);
+      await _ref.read(Preferences.tikNetAccessToken.notifier).update(data.accessToken);
+      await _ref.read(Preferences.tikNetTokenExpiresAt.notifier).update(expiresAt);
+      await _ref.read(Preferences.tikNetSubscriptionUrl.notifier).update(data.subscriptionUrl ?? '');
+
+      try {
+        final me = await _ref.read(tikNetApiProvider).getMe(baseUrl: baseUrl, accessToken: data.accessToken);
+        final user = me.username.trim();
+        if (user.isNotEmpty) {
+          await _ref.read(Preferences.tikNetSavedUsername.notifier).update(user);
+        }
+      } catch (_) {}
+
+      if (tikNetMode) {
+        TikNetDiagnosticLog.i('auth', 'loginWithToken ok', {
+          'panel': baseUrl,
+          'has_sub_url': (data.subscriptionUrl ?? '').isNotEmpty,
+        });
+      }
+    } on TikNetApiException catch (e) {
+      if (tikNetMode) {
+        TikNetDiagnosticLog.w('auth', 'loginWithToken failed', {'status': e.statusCode, 'msg': e.message});
+      }
+      throw AuthException(e.message.isNotEmpty ? e.message : 'ورود با لینک ناموفق بود');
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
+      final message = detail is String
+          ? detail
+          : _messageForStatus(statusCode, e.type);
+      throw AuthException(message);
+    } catch (e) {
+      if (e is AuthException) rethrow;
+      if (tikNetMode) TikNetDiagnosticLog.e('auth', 'loginWithToken error', {'error': e.toString()});
+      throw AuthException('اتصال به سرور ممکن نیست');
+    }
+  }
+
   String _messageForStatus(int? statusCode, DioExceptionType type) {
     if (statusCode != null) {
       switch (statusCode) {

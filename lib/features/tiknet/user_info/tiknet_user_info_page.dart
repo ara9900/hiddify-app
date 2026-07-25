@@ -564,7 +564,7 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'دوستان را دعوت کنید؛ بعد از اولین خرید موفق هر دو پاداش می‌گیرید.',
+            'دوستان را دعوت کنید؛ با تکمیل هر مرحله جایزه بگیرید.',
             style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
           ),
           if (info.referrerReward.amount > 0 || info.inviteeReward.amount > 0) ...[
@@ -634,6 +634,10 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
               ),
             ],
           ),
+          if (info.progress != null || info.milestones.isNotEmpty) ...[
+            const Gap(16),
+            _ReferralProgressBox(info: info),
+          ],
           if (attached.isNotEmpty) ...[
             const Gap(14),
             Text(
@@ -705,6 +709,88 @@ class _ReferralStatChip extends StatelessWidget {
             style: theme.textTheme.labelSmall?.copyWith(color: TikNetColors.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReferralProgressBox extends StatelessWidget {
+  const _ReferralProgressBox({required this.info});
+
+  final TikNetReferralInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final progress = info.progress;
+    final rewarded = progress?.rewardedCount ?? info.stats.rewardedCount;
+    final target = progress?.currentTarget ??
+        (info.milestones.isNotEmpty ? info.milestones.first.invitesRequired : 0);
+    final completedAll = progress?.completedAll == true ||
+        (info.milestones.isNotEmpty && rewarded >= info.milestones.last.invitesRequired);
+
+    if (completedAll) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: TikNetColors.connected.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: TikNetColors.connected.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          'همه مراحل دعوت تکمیل شد. تعداد دعوت‌های موفق: ${toPersianDigits('$rewarded')}',
+          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      );
+    }
+
+    if (target <= 0) return const SizedBox.shrink();
+
+    final displayRewarded = rewarded > target ? target : rewarded;
+    final ratio = progress?.progressRatio ??
+        (target > 0 ? (displayRewarded / target).clamp(0.0, 1.0) : 0.0);
+    final labelRaw = progress?.labelFa(rewarded: displayRewarded, target: target) ??
+        '$displayRewarded از $target';
+    final label = toPersianDigits(labelRaw);
+    final caption = (progress?.rewardCaption ?? '').trim().isNotEmpty
+        ? progress!.rewardCaption!.trim()
+        : (progress?.nextMilestone?.rewardCaptionFa ??
+            (info.milestones.isNotEmpty ? info.milestones.first.rewardCaptionFa : ''));
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: TikNetColors.surfaceVariant.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: TikNetColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'تعداد کاربر دعوت‌شده با کد شما: $label',
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const Gap(10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 10,
+              backgroundColor: TikNetColors.border,
+              color: TikNetColors.primary,
+            ),
+          ),
+          if (caption.isNotEmpty) ...[
+            const Gap(10),
+            Text(
+              caption,
+              style: theme.textTheme.labelLarge?.copyWith(color: TikNetColors.primary),
+            ),
+          ],
         ],
       ),
     );

@@ -79,6 +79,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data android:scheme="hiddify" />
+                <data android:scheme="tiknet" />
                 <data android:scheme="v2ray" />
                 <data android:scheme="v2rayn" />
                 <data android:scheme="v2rayng" />

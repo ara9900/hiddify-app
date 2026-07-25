@@ -12,6 +12,15 @@ Stream<String> myAppLinks(Ref ref) async* {
     for (final protocol in LinkParser.protocols) {
       registerProtocolHandler(protocol);
     }
+    registerProtocolHandler('tiknet');
   }
-  yield* AppLinks().uriLinkStream.map((event) => event.toString());
+  final appLinks = AppLinks();
+  // Cold start: deliver the link that launched the app.
+  try {
+    final initial = await appLinks.getInitialLink();
+    if (initial != null) {
+      yield initial.toString();
+    }
+  } catch (_) {}
+  yield* appLinks.uriLinkStream.map((event) => event.toString());
 }

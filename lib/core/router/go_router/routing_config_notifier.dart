@@ -25,6 +25,7 @@ import 'package:hiddify/features/settings/overview/sections/warp_options_page.da
 import 'package:hiddify/features/settings/overview/settings_page.dart';
 import 'package:hiddify/features/tiknet/app_filter/tiknet_app_filter_page.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
+import 'package:hiddify/features/tiknet/login/tiknet_qr_login_parser.dart';
 import 'package:hiddify/features/tiknet/login/tiknet_splash_screen.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/user_info/tiknet_user_info_page.dart';
@@ -284,10 +285,18 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
   RoutingConfig _buildTikNetConfig(bool tikNetLoggedIn, bool effectiveMobile) {
     return RoutingConfig(
       redirect: (context, state) {
+        final deep = state.uri.toString();
+        if (isTikNetLoginDeepLink(deep)) {
+          pendingTikNetLoginLink = deep;
+        }
         if (!tikNetLoggedIn && !state.matchedLocation.startsWith('/login')) return '/login';
         if (tikNetLoggedIn && state.matchedLocation == '/login') return '/home';
         // Never surface Hiddify intro / add-profile flows (deep links, /intro).
         if (state.matchedLocation == '/intro' || state.uri.queryParameters.containsKey('url')) {
+          return tikNetLoggedIn ? '/home' : '/login';
+        }
+        // Deep-link schemes (tiknet://...) are not real routes — land on login/home.
+        if (state.uri.scheme == 'tiknet') {
           return tikNetLoggedIn ? '/home' : '/login';
         }
         return null;
