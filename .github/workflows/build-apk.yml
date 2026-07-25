@@ -48,6 +48,13 @@ jobs:
           git clone https://github.com/hiddify/hiddify-sing-box.git hiddify-core/hiddify-sing-box
           git -C hiddify-core/hiddify-sing-box fetch --depth 1 origin "${SINGBOX_COMMIT}" || true
           git -C hiddify-core/hiddify-sing-box checkout "${SINGBOX_COMMIT}"
+          # Submodules use git@ URLs; rewrite to HTTPS for CI, then init replace/* trees.
+          if [ -f hiddify-core/hiddify-sing-box/.gitmodules ]; then
+            sed -i 's|git@github.com:|https://github.com/|g' hiddify-core/hiddify-sing-box/.gitmodules
+            git -C hiddify-core/hiddify-sing-box submodule sync --recursive
+            git -C hiddify-core/hiddify-sing-box submodule update --init --recursive --depth 1
+          fi
+          test -f hiddify-core/hiddify-sing-box/replace/psiphon-tls/go.mod
 
           echo "✅ hiddify-core @ ${HIDDIFY_CORE_COMMIT}"
           echo "✅ ray2sing @ $(git -C hiddify-core/ray2sing rev-parse --short HEAD)"

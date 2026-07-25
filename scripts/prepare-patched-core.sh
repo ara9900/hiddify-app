@@ -32,6 +32,13 @@ rm -rf hiddify-core/hiddify-sing-box
 git clone https://github.com/hiddify/hiddify-sing-box.git hiddify-core/hiddify-sing-box
 git -C hiddify-core/hiddify-sing-box fetch --depth 1 origin "$SINGBOX_COMMIT" || true
 git -C hiddify-core/hiddify-sing-box checkout "$SINGBOX_COMMIT"
+# Submodules default to git@; use HTTPS for CI / machines without SSH deploy keys.
+if [[ -f hiddify-core/hiddify-sing-box/.gitmodules ]]; then
+  sed -i 's|git@github.com:|https://github.com/|g' hiddify-core/hiddify-sing-box/.gitmodules
+  git -C hiddify-core/hiddify-sing-box submodule sync --recursive
+  git -C hiddify-core/hiddify-sing-box submodule update --init --recursive --depth 1
+fi
+test -f hiddify-core/hiddify-sing-box/replace/psiphon-tls/go.mod
 
 echo "==> Applying TikNet ray2sing patches"
 RAY2SING_DIR="$ROOT/hiddify-core/ray2sing" bash "$ROOT/scripts/apply-ray2sing-patches.sh"
