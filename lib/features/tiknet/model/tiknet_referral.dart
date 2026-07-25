@@ -160,6 +160,7 @@ class TikNetReferralProgress {
 /// Response from GET /api/customer/referral.
 class TikNetReferralInfo {
   const TikNetReferralInfo({
+    this.enabled = true,
     required this.referralCode,
     this.shareUrl,
     this.shareText,
@@ -172,6 +173,8 @@ class TikNetReferralInfo {
     this.milestones = const [],
   });
 
+  /// When false, the app must hide the entire referral UI.
+  final bool enabled;
   final String referralCode;
   final String? shareUrl;
   final String? shareText;
@@ -195,7 +198,12 @@ class TikNetReferralInfo {
             .toList()
         : const <TikNetReferralMilestone>[];
     final progressRaw = json['progress'] ?? json['milestone_progress'];
+    final enabled = json['referral_enabled'] as bool? ??
+        json['enabled'] as bool? ??
+        json['is_enabled'] as bool? ??
+        true;
     return TikNetReferralInfo(
+      enabled: enabled,
       referralCode: (json['referral_code'] as String?)?.trim() ?? '',
       shareUrl: (json['share_url'] as String?)?.trim(),
       shareText: (json['share_text'] as String?)?.trim(),

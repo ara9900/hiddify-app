@@ -209,8 +209,6 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
                   style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
                 ),
                 const Gap(24),
-                const _SectionTitle(title: 'معرف'),
-                const Gap(8),
                 const _ReferralSection(),
                 const Gap(24),
                 _SectionTitle(title: 'خدمات'),
@@ -360,7 +358,8 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
   Object? _error;
   bool _loading = true;
   bool _attaching = false;
-  bool _unavailable = false;
+  /// Panel disabled referral (flag, 403/404) — hide entire section.
+  bool _disabled = false;
   final _codeController = TextEditingController();
 
   @override
@@ -379,7 +378,7 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
     setState(() {
       _loading = true;
       _error = null;
-      _unavailable = false;
+      _disabled = false;
     });
     final baseUrl = ref.read(Preferences.tikNetPanelBaseUrl);
     final token = ref.read(authServiceProvider).getToken();
@@ -387,7 +386,7 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'نشست نامعتبر است.';
+          _disabled = true;
         });
       }
       return;
@@ -401,13 +400,15 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
       setState(() {
         _info = info;
         _loading = false;
+        _disabled = !info.enabled;
       });
     } on TikNetApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        if (e.statusCode == 404 || e.statusCode == 501) {
-          _unavailable = true;
+        // Disabled / not implemented → hide section entirely (no "coming soon" box).
+        if (e.statusCode == 403 || e.statusCode == 404 || e.statusCode == 501) {
+          _disabled = true;
         } else {
           _error = e.message;
         }
@@ -495,65 +496,67 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (_loading) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: TikNetColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: TikNetColors.border),
-        ),
-        child: const Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
+    if (_disabled) {
+      return const SizedBox.shrink();
     }
 
-    if (_unavailable) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: TikNetColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: TikNetColors.border),
-        ),
-        child: Text(
-          'سیستم معرف به‌زودی فعال می‌شود.',
-          style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
-        ),
+    if (_loading) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle(title: 'معرف'),
+          const Gap(8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: TikNetColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: TikNetColors.border),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+        ],
       );
     }
 
     if (_error != null || _info == null) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: TikNetColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: TikNetColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _error?.toString() ?? 'خطا در دریافت اطلاعات معرف',
-              style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle(title: 'معرف'),
+          const Gap(8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: TikNetColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: TikNetColors.border),
             ),
-            const Gap(10),
-            TextButton.icon(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('تلاش دوباره'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _error?.toString() ?? 'خطا در دریافت اطلاعات معرف',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
+                ),
+                const Gap(10),
+                TextButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('تلاش دوباره'),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
@@ -561,133 +564,140 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
     final code = info.referralCode;
     final attached = (info.attachedReferrerCode ?? '').trim();
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: TikNetColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: TikNetColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'دوستان را دعوت کنید؛ با تکمیل هر مرحله جایزه بگیرید.',
-            style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle(title: 'معرف'),
+        const Gap(8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: TikNetColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: TikNetColors.border),
           ),
-          if (info.referrerReward.amount > 0 || info.inviteeReward.amount > 0) ...[
-            const Gap(8),
-            Text(
-              'پاداش شما: ${info.referrerReward.labelFa} · پاداش دوست: ${info.inviteeReward.labelFa}',
-              style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.primary),
-            ),
-          ],
-          const Gap(14),
-          Text('کد معرف شما', style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant)),
-          const Gap(6),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: TikNetColors.surfaceVariant.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: TikNetColors.border),
-                  ),
-                  child: Text(
-                    code.isEmpty ? '—' : code,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ),
+              Text(
+                'دوستان را دعوت کنید؛ با تکمیل هر مرحله جایزه بگیرید.',
+                style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
               ),
-              const Gap(8),
-              IconButton.filledTonal(
-                onPressed: code.isEmpty ? null : () => _copyCode(code),
-                icon: const Icon(Icons.copy_rounded),
-                tooltip: 'کپی',
-              ),
-              IconButton.filledTonal(
-                onPressed: code.isEmpty ? null : () => _share(info),
-                icon: const Icon(Icons.share_rounded),
-                tooltip: 'اشتراک‌گذاری',
-              ),
-            ],
-          ),
-          const Gap(14),
-          Row(
-            children: [
-              Expanded(
-                child: _ReferralStatChip(
-                  label: 'دعوت‌ها',
-                  value: toPersianDigits('${info.stats.invitedCount}'),
-                ),
-              ),
-              const Gap(8),
-              Expanded(
-                child: _ReferralStatChip(
-                  label: 'پاداش‌خورده',
-                  value: toPersianDigits('${info.stats.rewardedCount}'),
-                ),
-              ),
-              const Gap(8),
-              Expanded(
-                child: _ReferralStatChip(
-                  label: 'در انتظار',
-                  value: toPersianDigits('${info.stats.pendingCount}'),
-                ),
-              ),
-            ],
-          ),
-          const Gap(16),
-          _ReferralProgressBox(info: info),
-          if (attached.isNotEmpty) ...[
-            const Gap(14),
-            Text(
-              'معرف شما: $attached',
-              style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ] else if (info.canAttachReferrer) ...[
-            const Gap(16),
-            Text(
-              'کد معرف دارید؟',
-              style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
-            ),
-            const Gap(6),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _codeController,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _attach(),
-                    decoration: const InputDecoration(
-                      hintText: 'کد معرف',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
+              if (info.referrerReward.amount > 0 || info.inviteeReward.amount > 0) ...[
                 const Gap(8),
-                FilledButton(
-                  onPressed: _attaching ? null : _attach,
-                  child: _attaching
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text('ثبت'),
+                Text(
+                  'پاداش شما: ${info.referrerReward.labelFa} · پاداش دوست: ${info.inviteeReward.labelFa}',
+                  style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.primary),
                 ),
               ],
-            ),
-          ],
-        ],
-      ),
+              const Gap(14),
+              Text('کد معرف شما', style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant)),
+              const Gap(6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: TikNetColors.surfaceVariant.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: TikNetColors.border),
+                      ),
+                      child: Text(
+                        code.isEmpty ? '—' : code,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Gap(8),
+                  IconButton.filledTonal(
+                    onPressed: code.isEmpty ? null : () => _copyCode(code),
+                    icon: const Icon(Icons.copy_rounded),
+                    tooltip: 'کپی',
+                  ),
+                  IconButton.filledTonal(
+                    onPressed: code.isEmpty ? null : () => _share(info),
+                    icon: const Icon(Icons.share_rounded),
+                    tooltip: 'اشتراک‌گذاری',
+                  ),
+                ],
+              ),
+              const Gap(14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ReferralStatChip(
+                      label: 'دعوت‌ها',
+                      value: toPersianDigits('${info.stats.invitedCount}'),
+                    ),
+                  ),
+                  const Gap(8),
+                  Expanded(
+                    child: _ReferralStatChip(
+                      label: 'پاداش‌خورده',
+                      value: toPersianDigits('${info.stats.rewardedCount}'),
+                    ),
+                  ),
+                  const Gap(8),
+                  Expanded(
+                    child: _ReferralStatChip(
+                      label: 'در انتظار',
+                      value: toPersianDigits('${info.stats.pendingCount}'),
+                    ),
+                  ),
+                ],
+              ),
+              const Gap(16),
+              _ReferralProgressBox(info: info),
+              if (attached.isNotEmpty) ...[
+                const Gap(14),
+                Text(
+                  'معرف شما: $attached',
+                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ] else if (info.canAttachReferrer) ...[
+                const Gap(16),
+                Text(
+                  'کد معرف دارید؟',
+                  style: theme.textTheme.labelMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
+                ),
+                const Gap(6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _codeController,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _attach(),
+                        decoration: const InputDecoration(
+                          hintText: 'کد معرف',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const Gap(8),
+                    FilledButton(
+                      onPressed: _attaching ? null : _attach,
+                      child: _attaching
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('ثبت'),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
