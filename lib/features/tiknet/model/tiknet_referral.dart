@@ -73,9 +73,12 @@ class TikNetReferralMilestone {
       return const TikNetReferralMilestone(invitesRequired: 0, trafficGb: 0, bonusDays: 0);
     }
     return TikNetReferralMilestone(
-      invitesRequired: (json['invites_required'] as num?)?.toInt() ?? 0,
-      trafficGb: (json['traffic_gb'] as num?) ?? 0,
-      bonusDays: (json['bonus_days'] as num?)?.toInt() ?? 0,
+      invitesRequired: (json['invites_required'] as num?)?.toInt() ??
+          (json['target'] as num?)?.toInt() ??
+          (json['invites'] as num?)?.toInt() ??
+          0,
+      trafficGb: (json['traffic_gb'] as num?) ?? (json['traffic'] as num?) ?? 0,
+      bonusDays: (json['bonus_days'] as num?)?.toInt() ?? (json['days'] as num?)?.toInt() ?? 0,
       title: (json['title'] as String?)?.trim(),
     );
   }
@@ -131,10 +134,13 @@ class TikNetReferralProgress {
     return TikNetReferralProgress(
       rewardedCount: (json['rewarded_count'] as num?)?.toInt() ?? 0,
       currentMilestoneIndex: (json['current_milestone_index'] as num?)?.toInt() ?? 0,
-      currentTarget: (json['current_target'] as num?)?.toInt() ?? 0,
-      currentLabel: (json['current_label'] as String?)?.trim(),
+      currentTarget: (json['current_target'] as num?)?.toInt() ??
+          (json['target'] as num?)?.toInt() ??
+          (next is Map ? (next['invites_required'] as num?)?.toInt() : null) ??
+          0,
+      currentLabel: (json['current_label'] as String?)?.trim() ?? (json['label'] as String?)?.trim(),
       progressRatio: ratio.clamp(0.0, 1.0),
-      rewardCaption: (json['reward_caption'] as String?)?.trim(),
+      rewardCaption: (json['reward_caption'] as String?)?.trim() ?? (json['prize_caption'] as String?)?.trim(),
       completedAll: json['completed_all'] as bool? ?? false,
       nextMilestone: next is Map
           ? TikNetReferralMilestone.fromJson(Map<String, dynamic>.from(next))
@@ -180,7 +186,7 @@ class TikNetReferralInfo {
   factory TikNetReferralInfo.fromJson(Map<String, dynamic> json) {
     final rewards = json['rewards'];
     final rewardsMap = rewards is Map ? Map<String, dynamic>.from(rewards) : <String, dynamic>{};
-    final milestonesRaw = json['milestones'];
+    final milestonesRaw = json['milestones'] ?? json['referral_milestones'] ?? rewardsMap['milestones'];
     final milestones = milestonesRaw is List
         ? milestonesRaw
             .whereType<Map>()
@@ -188,6 +194,7 @@ class TikNetReferralInfo {
             .where((m) => m.invitesRequired > 0)
             .toList()
         : const <TikNetReferralMilestone>[];
+    final progressRaw = json['progress'] ?? json['milestone_progress'];
     return TikNetReferralInfo(
       referralCode: (json['referral_code'] as String?)?.trim() ?? '',
       shareUrl: (json['share_url'] as String?)?.trim(),
@@ -207,8 +214,8 @@ class TikNetReferralInfo {
             ? Map<String, dynamic>.from(rewardsMap['invitee_on_first_purchase'] as Map)
             : null,
       ),
-      progress: json['progress'] is Map
-          ? TikNetReferralProgress.fromJson(Map<String, dynamic>.from(json['progress'] as Map))
+      progress: progressRaw is Map
+          ? TikNetReferralProgress.fromJson(Map<String, dynamic>.from(progressRaw))
           : null,
       milestones: milestones,
     );

@@ -187,14 +187,17 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 _StatsGrid(
-                  planName: profile?.planName,
+                  planName: profile?.planName?.trim().isNotEmpty == true ? profile!.planName!.trim() : '—',
                   expireLabel: profile?.expireDate != null ? formatShamsiDate(profile!.expireDate) : '—',
                   daysRemaining: profile?.daysRemaining != null
                       ? toPersianDigits('${profile!.daysRemaining}')
                       : _daysRemaining(profile?.expireDate),
-                  traffic: _hasTraffic(profile) ? _formatTraffic(profile!.trafficUsedBytes, profile.trafficLimitBytes) : null,
+                  trafficLabel: _hasTraffic(profile)
+                      ? _formatTraffic(profile!.trafficUsedBytes, profile.trafficLimitBytes)
+                      : null,
+                  trafficUsedBytes: profile?.trafficUsedBytes,
+                  trafficLimitBytes: profile?.trafficLimitBytes,
                   lastSync: lastSync != null ? '${formatShamsiDate(lastSync)} ${_formatTime(lastSync)}' : '—',
-                  appVersion: appVersion != null ? 'نسخه $appVersion' : '—',
                 ),
                 const Gap(20),
                 FilledButton.icon(
@@ -257,6 +260,12 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
                     side: const BorderSide(color: TikNetColors.error),
                     minimumSize: const Size.fromHeight(48),
                   ),
+                ),
+                const Gap(16),
+                Text(
+                  appVersion != null ? 'نسخه $appVersion' : '—',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
                 ),
               ]),
             ),
@@ -634,10 +643,8 @@ class _ReferralSectionState extends ConsumerState<_ReferralSection> {
               ),
             ],
           ),
-          if (info.progress != null || info.milestones.isNotEmpty) ...[
-            const Gap(16),
-            _ReferralProgressBox(info: info),
-          ],
+          const Gap(16),
+          _ReferralProgressBox(info: info),
           if (attached.isNotEmpty) ...[
             const Gap(14),
             Text(
@@ -725,10 +732,16 @@ class _ReferralProgressBox extends StatelessWidget {
     final theme = Theme.of(context);
     final progress = info.progress;
     final rewarded = progress?.rewardedCount ?? info.stats.rewardedCount;
-    final target = progress?.currentTarget ??
-        (info.milestones.isNotEmpty ? info.milestones.first.invitesRequired : 0);
+
+    final candidates = <int>[
+      progress?.currentTarget ?? 0,
+      progress?.nextMilestone?.invitesRequired ?? 0,
+      if (info.milestones.isNotEmpty) info.milestones.first.invitesRequired,
+    ];
+    final target = candidates.firstWhere((t) => t > 0, orElse: () => 5);
+
     final completedAll = progress?.completedAll == true ||
-        (info.milestones.isNotEmpty && rewarded >= info.milestones.last.invitesRequired);
+        (info.milestones.isNotEmpty && rewarded >= info.milestones.last.invitesRequired && info.milestones.last.invitesRequired > 0);
 
     if (completedAll) {
       return Container(
@@ -746,18 +759,25 @@ class _ReferralProgressBox extends StatelessWidget {
       );
     }
 
-    if (target <= 0) return const SizedBox.shrink();
-
     final displayRewarded = rewarded > target ? target : rewarded;
-    final ratio = progress?.progressRatio ??
-        (target > 0 ? (displayRewarded / target).clamp(0.0, 1.0) : 0.0);
-    final labelRaw = progress?.labelFa(rewarded: displayRewarded, target: target) ??
-        '$displayRewarded از $target';
+    final ratio = progress != null
+        ? progress.progressRatio
+        : (target > 0 ? (displayRewarded / target).clamp(0.0, 1.0) : 0.0);
+    final labelRaw = (progress?.currentLabel ?? '').trim().isNotEmpty
+        ? progress!.currentLabel!.trim()
+        : '$displayRewarded از $target';
     final label = toPersianDigits(labelRaw);
-    final caption = (progress?.rewardCaption ?? '').trim().isNotEmpty
-        ? progress!.rewardCaption!.trim()
-        : (progress?.nextMilestone?.rewardCaptionFa ??
-            (info.milestones.isNotEmpty ? info.milestones.first.rewardCaptionFa : ''));
+
+    var caption = (progress?.rewardCaption ?? '').trim();
+    if (caption.isEmpty) {
+      caption = progress?.nextMilestone?.rewardCaptionFa ?? '';
+    }
+    if (caption.isEmpty && info.milestones.isNotEmpty) {
+      caption = info.milestones.first.rewardCaptionFa;
+    }
+    if (caption.isEmpty) {
+      caption = 'جایزه پس از تکمیل این مرحله از پنل اعمال می‌شود';
+    }
 
     return Container(
       width: double.infinity,
@@ -784,13 +804,11 @@ class _ReferralProgressBox extends StatelessWidget {
               color: TikNetColors.primary,
             ),
           ),
-          if (caption.isNotEmpty) ...[
-            const Gap(10),
-            Text(
-              caption,
-              style: theme.textTheme.labelLarge?.copyWith(color: TikNetColors.primary),
-            ),
-          ],
+          const Gap(10),
+          Text(
+            caption,
+            style: theme.textTheme.labelLarge?.copyWith(color: TikNetColors.primary),
+          ),
         ],
       ),
     );
@@ -815,57 +833,114 @@ class _SectionTitle extends StatelessWidget {
 
 class _StatsGrid extends StatelessWidget {
   const _StatsGrid({
+    required this.planName,
     required this.expireLabel,
     required this.daysRemaining,
     required this.lastSync,
-    required this.appVersion,
-    this.planName,
-    this.traffic,
+    this.trafficLabel,
+    this.trafficUsedBytes,
+    this.trafficLimitBytes,
   });
 
-  final String? planName;
+  final String planName;
   final String expireLabel;
   final String daysRemaining;
-  final String? traffic;
   final String lastSync;
-  final String appVersion;
+  final String? trafficLabel;
+  final int? trafficUsedBytes;
+  final int? trafficLimitBytes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: _StatTile(icon: Icons.workspace_premium_outlined, label: 'پلن', value: planName)),
+            const Gap(10),
+            Expanded(child: _StatTile(icon: Icons.event_outlined, label: 'انقضا', value: expireLabel)),
+          ],
+        ),
+        const Gap(10),
+        Row(
+          children: [
+            Expanded(child: _StatTile(icon: Icons.timelapse_rounded, label: 'روز باقی‌مانده', value: daysRemaining)),
+            const Gap(10),
+            Expanded(child: _StatTile(icon: Icons.update_rounded, label: 'آخرین بروزرسانی', value: lastSync)),
+          ],
+        ),
+        if (trafficLabel != null) ...[
+          const Gap(10),
+          _TrafficStatTile(
+            label: trafficLabel!,
+            usedBytes: trafficUsedBytes ?? 0,
+            limitBytes: trafficLimitBytes ?? 0,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _TrafficStatTile extends StatelessWidget {
+  const _TrafficStatTile({
+    required this.label,
+    required this.usedBytes,
+    required this.limitBytes,
+  });
+
+  final String label;
+  final int usedBytes;
+  final int limitBytes;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      children: [
-        if (planName?.isNotEmpty == true) ...[
-          _StatTile(icon: Icons.workspace_premium_outlined, label: 'پلن', value: planName!, wide: true),
-          const Gap(10),
-        ],
-        Row(
-          children: [
-            Expanded(child: _StatTile(icon: Icons.event_outlined, label: 'انقضا', value: expireLabel)),
+    final hasLimit = limitBytes > 0;
+    final ratio = hasLimit ? (usedBytes / limitBytes).clamp(0.0, 1.0) : null;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: TikNetColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TikNetColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.data_usage_rounded, size: 18, color: TikNetColors.primary),
+              const Gap(6),
+              Text(
+                'مصرف حجم',
+                style: theme.textTheme.labelSmall?.copyWith(color: TikNetColors.onSurfaceVariant),
+              ),
+            ],
+          ),
+          const Gap(6),
+          Text(
+            label,
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (hasLimit) ...[
             const Gap(10),
-            Expanded(child: _StatTile(icon: Icons.timelapse_rounded, label: 'روز باقی‌مانده', value: daysRemaining)),
-          ],
-        ),
-        if (traffic != null) ...[
-          const Gap(10),
-          _StatTile(icon: Icons.data_usage_rounded, label: 'مصرف حجم', value: traffic!, wide: true),
-        ],
-        const Gap(10),
-        Row(
-          children: [
-            Expanded(child: _StatTile(icon: Icons.update_rounded, label: 'آخرین بروزرسانی', value: lastSync)),
-            const Gap(10),
-            Expanded(
-              child: _StatTile(
-                icon: Icons.smartphone_rounded,
-                label: 'نسخه',
-                value: appVersion,
-                valueStyle: theme.textTheme.bodySmall,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: ratio,
+                minHeight: 8,
+                backgroundColor: TikNetColors.border,
+                color: (ratio != null && ratio >= 0.9) ? TikNetColors.error : TikNetColors.primary,
               ),
             ),
           ],
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
