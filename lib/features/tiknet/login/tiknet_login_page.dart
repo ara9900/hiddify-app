@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/router/deep_linking/my_app_links.dart';
@@ -28,7 +32,9 @@ class TikNetLoginPage extends HookConsumerWidget {
     final panelReady = useState(false);
     final panelReachable = useState(true);
     final publicConfig = useState(const TikNetPublicConfig());
+    final obscure = useState(true);
     final deepLinkHandled = useRef(false);
+    final pulse = useAnimationController(duration: const Duration(milliseconds: 2800))..repeat(reverse: true);
 
     Future<void> runLogin({required String username, required String password, String? panelBaseUrl}) async {
       errorMsg.value = null;
@@ -137,13 +143,12 @@ class TikNetLoginPage extends HookConsumerWidget {
 
       final payload = parseTikNetQrLogin(raw);
       if (payload == null) {
-        errorMsg.value = 'QR نامعتبر است.';
+        errorMsg.value = 'کد QR ورود نامعتبر است.';
         return;
       }
 
       if (payload is TikNetQrSubscriptionLink) {
-        errorMsg.value =
-            'این QR لینک اشتراک است، نه ورود.\nQR ورود باید شامل نام کاربری و رمز باشد (مثلاً username:password یا JSON).';
+        errorMsg.value = 'این QR برای ورود نیست. لطفاً QR ورود حساب را اسکن کنید.';
         return;
       }
 
@@ -159,136 +164,354 @@ class TikNetLoginPage extends HookConsumerWidget {
 
     final formEnabled = panelReady.value && panelReachable.value && !isLoading.value;
     final shop = publicConfig.value;
+    final size = MediaQuery.sizeOf(context);
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Image.asset(
-                        'assets/images/tiknet_splash.png',
-                        height: 120,
-                        width: 120,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  const Gap(16),
-                  Text(
-                    'TikNet',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  const Gap(8),
-                  Text(
-                    'ورود با حساب پنل',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                  const Gap(32),
-                  if (!panelReady.value)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (!panelReachable.value)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'اتصال به پنل برقرار نشد. اتصال اینترنت را بررسی کنید.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: theme.colorScheme.error),
-                      ),
-                    )
-                  else ...[
-                    TextField(
-                      controller: usernameController,
-                      decoration: const InputDecoration(labelText: 'نام کاربری'),
-                      textInputAction: TextInputAction.next,
-                      enabled: formEnabled,
-                    ),
-                    const Gap(16),
-                    TextField(
-                      controller: passwordController,
-                      decoration: const InputDecoration(labelText: 'رمز عبور'),
-                      obscureText: true,
-                      textInputAction: TextInputAction.done,
-                      enabled: formEnabled,
-                      onSubmitted: (_) => doPasswordLogin(),
-                    ),
-                    if (errorMsg.value != null) ...[
-                      const Gap(16),
+      backgroundColor: TikNetColors.background,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const _LoginAtmosphere(),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Gap(size.height < 700 ? 12 : 28),
+                      _BrandHero(pulse: pulse)
+                          .animate()
+                          .fadeIn(duration: 700.ms, curve: Curves.easeOut)
+                          .scale(begin: const Offset(0.86, 0.86), end: const Offset(1, 1), duration: 800.ms, curve: Curves.easeOutBack),
+                      const Gap(18),
                       Text(
-                        errorMsg.value!,
+                        'TikNet',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: theme.colorScheme.error),
-                      ),
-                    ],
-                    const Gap(24),
-                    FilledButton(
-                      onPressed: formEnabled ? doPasswordLogin : null,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: isLoading.value
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Text('ورود'),
-                      ),
-                    ),
-                    const Gap(12),
-                    OutlinedButton.icon(
-                      onPressed: formEnabled ? doQrLogin : null,
-                      icon: const Icon(Icons.qr_code_scanner_rounded),
-                      label: const Text('ورود با QR'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: TikNetColors.primary,
-                        side: const BorderSide(color: TikNetColors.primary),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                    if (shop.showTelegramShop) ...[
-                      const Gap(12),
-                      FilledButton.tonalIcon(
-                        onPressed: formEnabled
-                            ? () => UriUtils.tryLaunch(Uri.parse(shop.telegramShopUrl!))
-                            : null,
-                        icon: const Icon(Icons.send_rounded),
-                        label: Text(
-                          (shop.telegramShopLabel?.trim().isNotEmpty == true)
-                              ? shop.telegramShopLabel!.trim()
-                              : 'خرید از ربات تلگرام',
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
                         ),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                      )
+                          .animate()
+                          .fadeIn(delay: 120.ms, duration: 500.ms)
+                          .slideY(begin: 0.2, end: 0, delay: 120.ms, duration: 500.ms, curve: Curves.easeOutCubic),
+                      const Gap(6),
+                      Text(
+                        'ورود امن به حساب شما',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: TikNetColors.onSurfaceVariant,
                         ),
-                      ),
+                      )
+                          .animate()
+                          .fadeIn(delay: 200.ms, duration: 500.ms)
+                          .slideY(begin: 0.15, end: 0, delay: 200.ms, duration: 500.ms),
+                      const Gap(28),
+                      if (!panelReady.value)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 28),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (!panelReachable.value)
+                        _GlassCard(
+                          child: Text(
+                            'اتصال به پنل برقرار نشد. اتصال اینترنت را بررسی کنید.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: theme.colorScheme.error, height: 1.5),
+                          ),
+                        )
+                      else
+                        _GlassCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              TextField(
+                                controller: usernameController,
+                                decoration: _fieldDecoration(
+                                  label: 'نام کاربری',
+                                  icon: Icons.person_outline_rounded,
+                                ),
+                                textInputAction: TextInputAction.next,
+                                enabled: formEnabled,
+                              ),
+                              const Gap(14),
+                              TextField(
+                                controller: passwordController,
+                                decoration: _fieldDecoration(
+                                  label: 'رمز عبور',
+                                  icon: Icons.lock_outline_rounded,
+                                  suffix: IconButton(
+                                    onPressed: () => obscure.value = !obscure.value,
+                                    icon: Icon(
+                                      obscure.value ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                                      color: TikNetColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                                obscureText: obscure.value,
+                                textInputAction: TextInputAction.done,
+                                enabled: formEnabled,
+                                onSubmitted: (_) => doPasswordLogin(),
+                              ),
+                              if (errorMsg.value != null) ...[
+                                const Gap(14),
+                                Text(
+                                  errorMsg.value!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: theme.colorScheme.error, height: 1.4),
+                                ),
+                              ],
+                              const Gap(22),
+                              FilledButton(
+                                onPressed: formEnabled ? doPasswordLogin : null,
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(52),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                ),
+                                child: isLoading.value
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                                      )
+                                    : const Text('ورود'),
+                              ),
+                              const Gap(12),
+                              OutlinedButton.icon(
+                                onPressed: formEnabled ? doQrLogin : null,
+                                icon: const Icon(Icons.qr_code_scanner_rounded),
+                                label: const Text('ورود با QR'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: TikNetColors.primary,
+                                  side: BorderSide(color: TikNetColors.primary.withValues(alpha: 0.7)),
+                                  minimumSize: const Size.fromHeight(50),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                ),
+                              ),
+                              if (shop.showTelegramShop) ...[
+                                const Gap(12),
+                                FilledButton.tonalIcon(
+                                  onPressed: formEnabled
+                                      ? () => UriUtils.tryLaunch(Uri.parse(shop.telegramShopUrl!))
+                                      : null,
+                                  icon: const Icon(Icons.shopping_bag_outlined),
+                                  label: Text(
+                                    (shop.telegramShopLabel?.trim().isNotEmpty == true)
+                                        ? shop.telegramShopLabel!.trim()
+                                        : 'خرید و تمدید',
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(50),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        )
+                            .animate()
+                            .fadeIn(delay: 280.ms, duration: 600.ms)
+                            .slideY(begin: 0.12, end: 0, delay: 280.ms, duration: 650.ms, curve: Curves.easeOutCubic),
+                      const Gap(24),
                     ],
-                    const Gap(8),
-                    Text(
-                      'QR ورود: username:password یا JSON با username و password',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
-                    ),
-                  ],
-                ],
+                  ),
+                ),
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _fieldDecoration({
+    required String label,
+    required IconData icon,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: TikNetColors.onSurfaceVariant),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.04),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: TikNetColors.primary, width: 1.4),
+      ),
+    );
+  }
+}
+
+class _BrandHero extends StatelessWidget {
+  const _BrandHero({required this.pulse});
+
+  final AnimationController pulse;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: pulse,
+      builder: (context, child) {
+        final t = Curves.easeInOut.transform(pulse.value);
+        final glow = 18 + (t * 16);
+        return Center(
+          child: Container(
+            width: 118,
+            height: 118,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: TikNetColors.primary.withValues(alpha: 0.28 + t * 0.22),
+                  blurRadius: glow,
+                  spreadRadius: 2 + t * 4,
+                ),
+                BoxShadow(
+                  color: const Color(0xFF22D3EE).withValues(alpha: 0.12 + t * 0.1),
+                  blurRadius: glow + 10,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              TikNetColors.primary.withValues(alpha: 0.35),
+              Colors.white.withValues(alpha: 0.06),
+            ],
+          ),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        ),
+        child: Image.asset(
+          'assets/images/tiknet_shield.png',
+          fit: BoxFit.contain,
         ),
       ),
+    );
+  }
+}
+
+class _GlassCard extends StatelessWidget {
+  const _GlassCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            color: Colors.white.withValues(alpha: 0.05),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 28,
+                offset: const Offset(0, 16),
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _LoginAtmosphere extends StatefulWidget {
+  const _LoginAtmosphere();
+
+  @override
+  State<_LoginAtmosphere> createState() => _LoginAtmosphereState();
+}
+
+class _LoginAtmosphereState extends State<_LoginAtmosphere> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 14))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = _controller.value * math.pi * 2;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            const ColoredBox(color: TikNetColors.background),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(-0.75 + 0.15 * math.sin(t), -0.85),
+                  radius: 1.15,
+                  colors: [
+                    TikNetColors.primary.withValues(alpha: 0.34),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(0.9, 0.75 + 0.1 * math.cos(t)),
+                  radius: 1.05,
+                  colors: [
+                    const Color(0xFF22D3EE).withValues(alpha: 0.16),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.55),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
