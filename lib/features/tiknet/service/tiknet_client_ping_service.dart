@@ -10,7 +10,10 @@ import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// Best sing-box group tag for urltest (selector or dedicated url-test group).
+/// Best sing-box group tag for urltest.
+///
+/// Prefer a dedicated `urltest` group when present (lists leaf proxies). Otherwise
+/// the main selector — same group the proxies UI tests via `urlTest("select")`.
 String urlTestGroupTagForCatalog(TikNetPersonalOutboundCatalog catalog) {
   for (final mode in catalog.autoModes) {
     if (mode.kind == TikNetPersonalPickKind.urltest && mode.tag.trim().isNotEmpty) {
@@ -23,7 +26,49 @@ String urlTestGroupTagForCatalog(TikNetPersonalOutboundCatalog catalog) {
   return '';
 }
 
-/// Latency via sing-box urltest when core is up; otherwise HTTP probe to outbound host.
+/// Merge urlTestDelay from every group; prefer a real result over 0 / stale fail.
+Map<String, int> delayByTagFromGroups(Iterable<OutboundGroup> groups) {
+  final out = <String, int>{};
+  for (final group in groups) {
+    for (final item in group.items) {
+      final tag = item.tag.trim();
+      if (tag.isEmpty) continue;
+      final delay = item.urlTestDelay;
+      final prev = out[tag];
+      if (prev == null) {
+        out[tag] = delay;
+        continue;
+      }
+      // Prefer a successful measurement.
+      if (delay > 0 && delay < 65000) {
+        out[tag] = delay;
+        continue;
+      }
+      // Prefer any completed result (incl. fail) over "not tested yet" (0).
+      if (prev == 0 && delay != 0) {
+        out[tag] = delay;
+      }
+    }
+  }
+  return out;
+}
+
+/// True when every [wanted] tag that appears in [delays] has a non-zero delay,
+/// and at least one wanted tag was observed.
+bool urlTestDelaysSettled(Map<String, int> delays, Set<String> wanted) {
+  if (wanted.isEmpty) return true;
+  var seen = 0;
+  var done = 0;
+  for (final tag in wanted) {
+    final d = delays[tag];
+    if (d == null) continue;
+    seen++;
+    if (d != 0) done++;
+  }
+  return seen > 0 && done == seen;
+}
+
+/// Latency via sing-box urltest when core is up (user VPN or temporary probe).
 class TikNetClientPingService {
   TikNetClientPingService(this._ref);
 
@@ -54,51 +99,68 @@ class TikNetClientPingService {
   }
 
   /// urltest on [groupTag] then read [OutboundInfo.urlTestDelay] per node tag.
+  ///
+  /// When [skipServiceCheck] is true (probe already waited for core Connected),
+  /// skips [serviceRunningProvider] — needed because probe remaps UI to Disconnected.
+  ///
+  /// Waits for delays to leave 0 (urlTest often finishes updating via stream after
+  /// the RPC returns). Treating delay==0 as "قطع" caused Reality false-negatives.
   Future<Map<String, TikNetClientPingResult>> measureNodePingsFromCore(
-    TikNetPersonalOutboundCatalog catalog,
-  ) async {
+    TikNetPersonalOutboundCatalog catalog, {
+    bool skipServiceCheck = false,
+  }) async {
     final nodes = catalog.nodes;
     if (nodes.isEmpty) return const {};
 
-    final running = await _ref.read(serviceRunningProvider.future).catchError((_) => false);
-    if (!running) return const {};
+    if (!skipServiceCheck) {
+      final running = await _ref.read(serviceRunningProvider.future).catchError((_) => false);
+      if (!running) return const {};
+    }
 
     final groupTag = urlTestGroupTagForCatalog(catalog);
     if (groupTag.isEmpty) return const {};
 
-    try {
-      await _ref
-          .read(proxyRepositoryProvider)
-          .urlTest(groupTag)
-          .getOrElse((_) => unit)
-          .run()
-          .timeout(const Duration(seconds: 10));
-    } on TimeoutException {
-      return const {};
-    } catch (_) {
-      return const {};
-    }
+    final wanted = {
+      for (final n in nodes)
+        if (n.tag.trim().isNotEmpty) n.tag.trim(),
+    };
+    if (wanted.isEmpty) return const {};
 
-    OutboundGroup? group;
-    try {
-      group = await _ref
-          .read(proxyRepositoryProvider)
-          .watchProxies()
-          .map((e) => e.fold((_) => null, (g) => g))
-          .where((g) => g != null)
-          .map((g) => g!)
-          .first
-          .timeout(const Duration(seconds: 8));
-    } on TimeoutException {
-      return const {};
-    } catch (_) {
-      return const {};
-    }
+    final repo = _ref.read(proxyRepositoryProvider);
+    final settled = Completer<Map<String, int>>();
+    var latest = <String, int>{};
 
-    return _delaysFromGroup(group, nodes);
+    final sub = repo.watchAllProxies().listen((event) {
+      final groups = event.fold<List<OutboundGroup>?>((_) => null, (g) => g);
+      if (groups == null || groups.isEmpty) return;
+      latest = delayByTagFromGroups(groups);
+      if (!settled.isCompleted && urlTestDelaysSettled(latest, wanted)) {
+        settled.complete(Map<String, int>.from(latest));
+      }
+    });
+
+    try {
+      // Reality handshakes are slow; allow the core RPC to finish testing the group.
+      try {
+        await repo.urlTest(groupTag).getOrElse((_) => unit).run().timeout(const Duration(seconds: 35));
+      } on TimeoutException {
+        // Still try to read whatever delays the stream already has.
+      } catch (_) {
+        // Same — fall through to stream wait / latest snapshot.
+      }
+
+      final delays = await settled.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => Map<String, int>.from(latest),
+      );
+      return _delaysFromMap(delays, nodes);
+    } finally {
+      await sub.cancel();
+    }
   }
 
   /// TCP connect to each node's host:port — never starts VPN.
+  /// Kept for unit tests only; TikNet UI measure uses urltest (connected or probe).
   Future<Map<String, TikNetClientPingResult>> measureNodePingsTcp(
     TikNetPersonalOutboundCatalog catalog, {
     Duration timeout = const Duration(seconds: 3),
@@ -107,17 +169,10 @@ class TikNetClientPingService {
     return measureNodesTcp(catalog.nodes, timeout: timeout, concurrency: concurrency);
   }
 
-  Map<String, TikNetClientPingResult> _delaysFromGroup(
-    OutboundGroup? group,
+  Map<String, TikNetClientPingResult> _delaysFromMap(
+    Map<String, int> delayByTag,
     List<TikNetPersonalProxyNode> nodes,
   ) {
-    if (group == null) return const {};
-
-    final delayByTag = <String, int>{
-      for (final item in group.items)
-        if (item.tag.isNotEmpty) item.tag: item.urlTestDelay,
-    };
-
     final out = <String, TikNetClientPingResult>{};
     for (final node in nodes) {
       final delay = delayByTag[node.tag];
@@ -125,7 +180,12 @@ class TikNetClientPingService {
         out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
         continue;
       }
-      if (delay <= 0 || delay >= 65000) {
+      // 0 = not tested yet / unset — must NOT show as "قطع" (false negative).
+      if (delay <= 0) {
+        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+        continue;
+      }
+      if (delay >= 65000) {
         out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
         continue;
       }

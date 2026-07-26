@@ -10,8 +10,9 @@ import 'package:hiddify/hiddifycore/hiddify_core_service.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
 
 abstract interface class ProxyRepository {
-  // Stream<Either<ProxyFailure, List<OutboundGroup>>> watchProxies();
   Stream<Either<ProxyFailure, OutboundGroup?>> watchProxies();
+  /// All groups from core (needed to read urltest delays for leaf outbounds).
+  Stream<Either<ProxyFailure, List<OutboundGroup>>> watchAllProxies();
   Stream<Either<ProxyFailure, List<OutboundGroup>>> watchActiveProxies();
   TaskEither<ProxyFailure, oldipinfo.IpInfo> getCurrentIpInfo(CancelToken cancelToken);
   TaskEither<ProxyFailure, Unit> selectProxy(String groupTag, String outboundTag);
@@ -63,6 +64,14 @@ class ProxyRepositoryImpl with ExceptionHandler, InfraLogger implements ProxyRep
   Stream<Either<ProxyFailure, OutboundGroup?>> watchProxies() {
     return singbox.watchGroup().handleExceptions((error, stackTrace) {
       loggy.error("error watching proxies", error, stackTrace);
+      return ProxyUnexpectedFailure(error, stackTrace);
+    });
+  }
+
+  @override
+  Stream<Either<ProxyFailure, List<OutboundGroup>>> watchAllProxies() {
+    return singbox.watchGroups().handleExceptions((error, stackTrace) {
+      loggy.error("error watching all proxies", error, stackTrace);
       return ProxyUnexpectedFailure(error, stackTrace);
     });
   }

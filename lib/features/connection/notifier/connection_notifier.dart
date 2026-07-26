@@ -12,10 +12,12 @@ import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
+import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:in_app_review/in_app_review.dart';
@@ -26,10 +28,17 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 part 'connection_notifier.g.dart';
 
+/// True while TikNet temporarily starts core in proxy mode for urltest (UI stays disconnected).
+final tikNetUrlTestProbeActiveProvider = StateProvider<bool>((ref) => false);
+
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   /// While true, UI stays on disconnecting until core reports stopped (avoids CONNECTING loop).
   bool _ignoreCoreUntilStopped = false;
+
+  /// Set when user taps Connect during a urltest probe — probe cleans up then yields.
+  bool _urlTestProbeCancel = false;
+  Completer<void>? _urlTestProbeDone;
 
   @override
   Stream<ConnectionStatus> build() async* {
@@ -78,6 +87,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (Platform.isAndroid && tikNetMode) {
       Future.microtask(() async {
         if (!ref.read(Preferences.startedByUser)) {
+          if (ref.read(tikNetUrlTestProbeActiveProvider)) return;
           await _forceStopCore();
           return;
         }
@@ -119,6 +129,13 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         _ => const Disconnecting(),
       };
     }
+    // Temporary proxy urltest: core may be Connected but UI must stay Disconnected.
+    if (ref.read(tikNetUrlTestProbeActiveProvider)) {
+      return switch (event) {
+        Connected() || Connecting() || Disconnecting() => const Disconnected(),
+        _ => event,
+      };
+    }
     if (!ref.read(Preferences.startedByUser)) {
       return switch (event) {
         Connected() || Connecting() || Disconnecting() => () {
@@ -129,6 +146,118 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       };
     }
     return event;
+  }
+
+  /// Runs [action] with sing-box up. If user-connected, runs immediately; otherwise
+  /// starts a temporary [ServiceMode.proxy] session (no TUN / no startedByUser) for urltest.
+  ///
+  /// On iOS, proxy mode may still involve the network extension — we still attempt the probe.
+  Future<T> runUrlTestProbe<T>(Future<T> Function() action) async {
+    final startedByUser = ref.read(Preferences.startedByUser);
+    final uiStatus = state.valueOrNull;
+    if (startedByUser && uiStatus is Connected) {
+      return action();
+    }
+
+    if (_urlTestProbeDone != null && !_urlTestProbeDone!.isCompleted) {
+      throw StateError('urltest probe already running');
+    }
+
+    _urlTestProbeCancel = false;
+    final done = Completer<void>();
+    _urlTestProbeDone = done;
+    final previousMode = ref.read(ConfigOptions.serviceMode);
+    ref.read(tikNetUrlTestProbeActiveProvider.notifier).state = true;
+    if (tikNetMode) {
+      TikNetDiagnosticLog.i('ping', 'urltest probe start', {'prev_mode': previousMode.key});
+    }
+
+    try {
+      if (previousMode != ServiceMode.proxy) {
+        await ref.read(ConfigOptions.serviceMode.notifier).update(ServiceMode.proxy);
+      }
+      if (_urlTestProbeCancel || ref.read(Preferences.startedByUser)) {
+        throw StateError('urltest probe aborted');
+      }
+
+      final activeProfile = await ref.read(activeProfileProvider.future);
+      if (activeProfile == null) {
+        throw StateError('urltest probe: no active profile');
+      }
+
+      // Subscribe before connect so we cannot miss a fast CoreStarted event.
+      final coreConnected = Completer<void>();
+      final statusSub = _connectionRepo.watchConnectionStatus().listen((s) {
+        if (s is Connected && !coreConnected.isCompleted) coreConnected.complete();
+      });
+
+      try {
+        final connectEither = await _connectionRepo
+            .connect(activeProfile, ref.read(Preferences.disableMemoryLimit))
+            .run();
+        connectEither.fold(
+          (err) {
+            loggy.warning("urltest probe connect failed", err);
+            throw StateError('urltest probe connect failed: $err');
+          },
+          (_) {},
+        );
+        if (_urlTestProbeCancel || ref.read(Preferences.startedByUser)) {
+          throw StateError('urltest probe aborted');
+        }
+
+        await coreConnected.future.timeout(const Duration(seconds: 20));
+        if (_urlTestProbeCancel || ref.read(Preferences.startedByUser)) {
+          throw StateError('urltest probe aborted');
+        }
+
+        return await action();
+      } finally {
+        await statusSub.cancel();
+      }
+    } finally {
+      final userTookOver = ref.read(Preferences.startedByUser);
+      try {
+        if (!userTookOver) {
+          await _connectionRepo.disconnect().run().timeout(const Duration(seconds: 12));
+        }
+      } on TimeoutException {
+        loggy.warning("urltest probe disconnect timed out");
+        if (!userTookOver) await _forceStopCore();
+      } catch (e, st) {
+        loggy.warning("urltest probe disconnect failed", e, st);
+        if (!userTookOver) await _forceStopCore();
+      }
+      try {
+        if (!userTookOver && ref.read(ConfigOptions.serviceMode) != previousMode) {
+          await ref.read(ConfigOptions.serviceMode.notifier).update(previousMode);
+        }
+      } catch (e, st) {
+        loggy.warning("urltest probe restore serviceMode failed", e, st);
+      }
+      ref.read(tikNetUrlTestProbeActiveProvider.notifier).state = false;
+      _urlTestProbeCancel = false;
+      if (!userTookOver) {
+        state = const AsyncData(Disconnected());
+      }
+      if (tikNetMode) {
+        TikNetDiagnosticLog.i('ping', 'urltest probe end', {'user_took_over': userTookOver});
+      }
+      if (!done.isCompleted) done.complete();
+      if (identical(_urlTestProbeDone, done)) _urlTestProbeDone = null;
+    }
+  }
+
+  Future<void> _awaitUrlTestProbeIfActive() async {
+    if (!ref.read(tikNetUrlTestProbeActiveProvider)) return;
+    _urlTestProbeCancel = true;
+    final done = _urlTestProbeDone;
+    if (done == null || done.isCompleted) return;
+    try {
+      await done.future.timeout(const Duration(seconds: 25));
+    } on TimeoutException {
+      loggy.warning("waiting for urltest probe timed out");
+    }
   }
 
   Future<void> _forceStopCore() async {
@@ -163,11 +292,14 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   Future<void> toggleConnection() async {
     final haptic = ref.read(hapticServiceProvider.notifier);
     if (state case AsyncError()) {
+      await _awaitUrlTestProbeIfActive();
       await haptic.lightImpact();
       await _connect();
     } else if (state case AsyncData(:final value)) {
       switch (value) {
         case Disconnected():
+          // Abort temporary urltest probe before real user connect.
+          await _awaitUrlTestProbeIfActive();
           await haptic.lightImpact();
           _ignoreCoreUntilStopped = false;
           await ref.read(Preferences.startedByUser.notifier).update(true);

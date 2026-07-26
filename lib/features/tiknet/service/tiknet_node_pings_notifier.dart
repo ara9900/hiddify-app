@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
@@ -7,9 +8,9 @@ import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart'
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// On-demand pings — never auto-connects / never toggles VPN.
-/// - VPN off: TCP to outbound host:port (reachability from device; not tunnel quality).
-/// - VPN on: sing-box urltest (real proxy / HTTP latency through the config).
+/// On-demand pings — never toggles the user-facing VPN / startedByUser.
+/// - VPN on (user): sing-box urltest through the live core.
+/// - VPN off: temporary ServiceMode.proxy urltest probe, then disconnect.
 /// Call [measure] only from explicit UI (e.g. server picker refresh).
 class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNetClientPingResult>> {
   @override
@@ -29,17 +30,24 @@ class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNe
     final catalog = ref.read(personalOutboundProvider).valueOrNull?.catalog;
     if (catalog == null || catalog.nodes.isEmpty) return const {};
 
+    final startedByUser = ref.read(Preferences.startedByUser);
     final connected = ref.read(connectionNotifierProvider).valueOrNull is Connected;
     final service = ref.read(tikNetClientPingServiceProvider);
+    final notifier = ref.read(connectionNotifierProvider.notifier);
 
     try {
-      if (connected) {
-        final fromCore = await service.measureNodePingsFromCore(catalog).timeout(const Duration(seconds: 14));
-        if (fromCore.isNotEmpty) return fromCore;
+      if (startedByUser && connected) {
+        return await service.measureNodePingsFromCore(catalog).timeout(const Duration(seconds: 50));
       }
-      // Pre-connect: TCP only — must not call connectionNotifier / start VPN.
-      return await service.measureNodePingsTcp(catalog).timeout(const Duration(seconds: 14));
+      // Pre-connect: real urltest via temporary proxy-mode core (not TCP).
+      return await notifier
+          .runUrlTestProbe(
+            () => service.measureNodePingsFromCore(catalog, skipServiceCheck: true),
+          )
+          .timeout(const Duration(seconds: 75));
     } on TimeoutException {
+      return const {};
+    } catch (_) {
       return const {};
     }
   }

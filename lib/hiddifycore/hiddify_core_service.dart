@@ -275,11 +275,20 @@ class HiddifyCoreService with InfraLogger {
     });
   }
 
-  // Stream<List<OutboundGroup>> watchGroups() async* {
-  //   loggy.debug("watching groups");
-  //   yield* core.bgClient.outboundsInfo(Empty()).map((event) => event.items);
-  //   // res?.cancel();
-  // }
+  /// All outbound groups (selector / urltest / …) with current urlTest delays.
+  Stream<List<OutboundGroup>> watchGroups() async* {
+    loggy.debug("watching groups");
+    if (!core.isInitialized()) {
+      loggy.debug("core is not initialized, returning empty groups stream");
+      return;
+    }
+    try {
+      yield* core.bgClient.outboundsInfo(Empty()).map((event) => event.items);
+    } catch (e) {
+      loggy.error("error watching groups: $e");
+      rethrow;
+    }
+  }
 
   Stream<OutboundGroup?> watchGroup() async* {
     loggy.debug("watching group");

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
+import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 void main() {
@@ -124,5 +125,37 @@ void main() {
     };
     final sorted = sortNodesByPing(nodes, pings);
     expect(sorted.map((n) => n.tag).toList(), ['fast', 'slow', 'dead']);
+  });
+
+  test('urlTestDelaysSettled requires non-zero delays for seen tags', () {
+    expect(urlTestDelaysSettled({}, {'a'}), isFalse);
+    expect(urlTestDelaysSettled({'a': 0}, {'a'}), isFalse);
+    expect(urlTestDelaysSettled({'a': 120}, {'a'}), isTrue);
+    expect(urlTestDelaysSettled({'a': 120, 'b': 0}, {'a', 'b'}), isFalse);
+    expect(urlTestDelaysSettled({'a': 120, 'b': 65000}, {'a', 'b'}), isTrue);
+    // Tags not present in delays are ignored (other group).
+    expect(urlTestDelaysSettled({'a': 50}, {'a', 'missing'}), isTrue);
+  });
+
+  test('delayByTagFromGroups prefers success over zero/fail', () {
+    final groups = [
+      OutboundGroup(
+        tag: 'Select',
+        items: [
+          OutboundInfo(tag: 'n1', urlTestDelay: 0),
+          OutboundInfo(tag: 'n2', urlTestDelay: 65000),
+        ],
+      ),
+      OutboundGroup(
+        tag: 'auto',
+        items: [
+          OutboundInfo(tag: 'n1', urlTestDelay: 85),
+          OutboundInfo(tag: 'n2', urlTestDelay: 40),
+        ],
+      ),
+    ];
+    final delays = delayByTagFromGroups(groups);
+    expect(delays['n1'], 85);
+    expect(delays['n2'], 40);
   });
 }
