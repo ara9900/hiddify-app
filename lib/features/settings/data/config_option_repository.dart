@@ -139,9 +139,13 @@ abstract class ConfigOptions {
 
   static final strictRoute = PreferencesNotifier.create<bool, bool>("strict-route", true);
 
+  /// TikNet: HTTPS gstatic is more reliable for Reality urltest than Apple captive HTTP.
+  static const tikNetDefaultConnectionTestUrl = "https://www.gstatic.com/generate_204";
+  static const legacyAppleCaptiveTestUrl = "http://captive.apple.com/hotspot-detect.html";
+
   static final connectionTestUrl = PreferencesNotifier.create<String, String>(
     "connection-test-url",
-    "http://captive.apple.com/hotspot-detect.html",
+    tikNetMode ? tikNetDefaultConnectionTestUrl : legacyAppleCaptiveTestUrl,
     possibleValues: List.of([
       "http://connectivitycheck.gstatic.com/generate_204",
       "http://www.gstatic.com/generate_204",

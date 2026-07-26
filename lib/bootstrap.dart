@@ -98,6 +98,15 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
       await container.read(ConfigOptions.useXrayCoreWhenPossible.notifier).update(true);
       await prefs.setBool('tiknet_reality_defaults_v1', true);
     });
+    // Migrate stored Apple captive urltest URL → gstatic (panel ping_test_url can still override later).
+    await _init("tiknet connection test url", () async {
+      final current = container.read(ConfigOptions.connectionTestUrl);
+      if (current == ConfigOptions.legacyAppleCaptiveTestUrl) {
+        await container
+            .read(ConfigOptions.connectionTestUrl.notifier)
+            .update(ConfigOptions.tikNetDefaultConnectionTestUrl);
+      }
+    });
     await _init("tiknet session", () => reconcileTikNetSession(container));
   }
 

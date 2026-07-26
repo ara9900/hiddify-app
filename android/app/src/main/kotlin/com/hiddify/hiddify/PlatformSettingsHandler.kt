@@ -8,8 +8,10 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import java.io.File
 import android.util.Base64
@@ -46,6 +48,8 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
             GetInstalledPackages("get_installed_packages"),
             GetPackagesIcon("get_package_icon"),
             InstallApk("install_apk"),
+            GetNetworkDiagnostics("get_network_diagnostics"),
+            OpenSystemSettings("open_system_settings"),
         }
     }
 
@@ -217,7 +221,120 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
                 result.success(true)
             }
 
+            Trigger.GetNetworkDiagnostics.method -> {
+                result.runCatching {
+                    success(collectNetworkDiagnostics())
+                }
+            }
+
+            Trigger.OpenSystemSettings.method -> {
+                val act = activity ?: Application.application
+                val args = call.arguments as? Map<*, *>
+                val target = (args?.get("target") as? String)?.trim().orEmpty()
+                val opened = openSystemSettings(act, target)
+                result.success(opened)
+            }
+
             else -> result.notImplemented()
+        }
+    }
+
+    private fun collectNetworkDiagnostics(): Map<String, Any?> {
+        val ctx = Application.application
+        val resolver = ctx.contentResolver
+        val autoTime = Settings.Global.getInt(resolver, Settings.Global.AUTO_TIME, 0) == 1
+        val autoTimeZone = Settings.Global.getInt(resolver, Settings.Global.AUTO_TIME_ZONE, 0) == 1
+        val airplane = Settings.Global.getInt(resolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+
+        var privateDnsMode = "unknown"
+        var privateDnsSpecifier: String? = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            privateDnsMode = Settings.Global.getString(resolver, "private_dns_mode") ?: "off"
+            privateDnsSpecifier = Settings.Global.getString(resolver, "private_dns_specifier")
+        }
+
+        var hasInternet = false
+        var validated = false
+        var isVpn = false
+        var isWifi = false
+        var isCellular = false
+        var isEthernet = false
+        var dnsServers = emptyList<String>()
+
+        try {
+            val cm = Application.connectivity
+            val network = cm.activeNetwork
+            if (network != null) {
+                val caps = cm.getNetworkCapabilities(network)
+                if (caps != null) {
+                    hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                    isVpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                    isWifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                    isCellular = caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+                    isEthernet = caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                }
+                val link = cm.getLinkProperties(network)
+                dnsServers = link?.dnsServers?.mapNotNull { it.hostAddress } ?: emptyList()
+            }
+        } catch (_: Exception) {
+        }
+
+        var alwaysOnVpnApp: String? = null
+        var alwaysOnVpnLockdown: Boolean? = null
+        try {
+            alwaysOnVpnApp = Settings.Secure.getString(resolver, "always_on_vpn_app")
+            alwaysOnVpnLockdown = Settings.Secure.getInt(resolver, "always_on_vpn_lockdown", 0) == 1
+        } catch (_: Exception) {
+        }
+
+        val ignoringBattery = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Application.powerManager.isIgnoringBatteryOptimizations(ctx.packageName)
+        } else {
+            true
+        }
+
+        return mapOf(
+            "autoTime" to autoTime,
+            "autoTimeZone" to autoTimeZone,
+            "airplaneMode" to airplane,
+            "privateDnsMode" to privateDnsMode,
+            "privateDnsSpecifier" to privateDnsSpecifier,
+            "hasInternet" to hasInternet,
+            "validated" to validated,
+            "isVpn" to isVpn,
+            "isWifi" to isWifi,
+            "isCellular" to isCellular,
+            "isEthernet" to isEthernet,
+            "dnsServers" to dnsServers,
+            "alwaysOnVpnApp" to alwaysOnVpnApp,
+            "alwaysOnVpnLockdown" to alwaysOnVpnLockdown,
+            "ignoringBatteryOptimizations" to ignoringBattery,
+        )
+    }
+
+    private fun openSystemSettings(ctx: android.content.Context, target: String): Boolean {
+        return try {
+            val intent = when (target) {
+                "date" -> Intent(Settings.ACTION_DATE_SETTINGS)
+                "vpn" -> Intent("android.net.vpn.SETTINGS").takeIf {
+                    it.resolveActivity(ctx.packageManager) != null
+                } ?: Intent(Settings.ACTION_SETTINGS)
+                "apn" -> Intent(Settings.ACTION_APN_SETTINGS)
+                "private_dns", "wireless" -> Intent(Settings.ACTION_WIRELESS_SETTINGS)
+                "battery" -> Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).takeIf {
+                    it.resolveActivity(ctx.packageManager) != null
+                } ?: Intent(Settings.ACTION_SETTINGS)
+                "airplane" -> Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS).takeIf {
+                    it.resolveActivity(ctx.packageManager) != null
+                } ?: Intent(Settings.ACTION_WIRELESS_SETTINGS)
+                else -> Intent(Settings.ACTION_SETTINGS)
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 }

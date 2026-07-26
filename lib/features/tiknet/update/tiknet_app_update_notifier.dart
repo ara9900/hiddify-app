@@ -51,10 +51,6 @@ class TikNetAppUpdateNotifier extends Notifier<TikNetAppUpdateUiState> {
     return int.tryParse(build) ?? 0;
   }
 
-  int get _ignoredVersionCode {
-    return int.tryParse(ref.read(Preferences.tikNetIgnoredUpdateVersionCode)) ?? 0;
-  }
-
   Future<void> checkForUpdate({bool forceRefresh = false}) async {
     if (state is TikNetAppUpdateChecking || state is TikNetAppUpdateDownloading) return;
     state = const TikNetAppUpdateChecking();
@@ -64,10 +60,7 @@ class TikNetAppUpdateNotifier extends Notifier<TikNetAppUpdateUiState> {
         state = const TikNetAppUpdateUpToDate();
         return;
       }
-      if (!info.force && !forceRefresh && info.versionCode <= _ignoredVersionCode) {
-        state = const TikNetAppUpdateUpToDate();
-        return;
-      }
+      // Optional dismiss is session-only; every cold start shows again while outdated.
       state = TikNetAppUpdateAvailable(info);
     } catch (e) {
       state = TikNetAppUpdateError('بررسی آپدیت ناموفق بود');
@@ -75,7 +68,11 @@ class TikNetAppUpdateNotifier extends Notifier<TikNetAppUpdateUiState> {
   }
 
   Future<void> dismissOptional(TikNetAppUpdateInfo info) async {
-    await ref.read(Preferences.tikNetIgnoredUpdateVersionCode.notifier).update('${info.versionCode}');
+    // Clear any legacy persisted snooze so older installs prompt again next launch.
+    final ignored = ref.read(Preferences.tikNetIgnoredUpdateVersionCode);
+    if (ignored.isNotEmpty) {
+      await ref.read(Preferences.tikNetIgnoredUpdateVersionCode.notifier).update('');
+    }
     ref.read(tikNetTelemetryServiceProvider).send('update_dismissed', payload: {'version_code': info.versionCode});
     state = const TikNetAppUpdateUpToDate();
   }

@@ -12,6 +12,7 @@ import 'package:hiddify/features/tiknet/service/auth_service.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_api.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_notification_service.dart';
+import 'package:hiddify/features/tiknet/user_info/tiknet_internet_troubleshoot_sheet.dart';
 import 'package:hiddify/features/tiknet/user_info/tiknet_logout_dialog.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hiddify/utils/uri_utils.dart';
@@ -226,6 +227,12 @@ class _TikNetUserInfoPageState extends ConsumerState<TikNetUserInfoPage> {
                       icon: Icons.help_outline_rounded,
                       label: 'راهنما و سوالات',
                       onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TikNetFaqPage())),
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    _ActionTile(
+                      icon: Icons.troubleshoot_outlined,
+                      label: 'عیب‌یابی اینترنت گوشی',
+                      onTap: () => showTikNetInternetTroubleshootSheet(context, ref),
                     ),
                   ],
                 ),

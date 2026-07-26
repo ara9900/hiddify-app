@@ -5,8 +5,10 @@ import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
+import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -125,6 +127,14 @@ class TikNetClientPingService {
         if (n.tag.trim().isNotEmpty) n.tag.trim(),
     };
     if (wanted.isEmpty) return const {};
+
+    final testUrl = _ref.read(ConfigOptions.connectionTestUrl);
+    TikNetDiagnosticLog.i('ping', 'urltest start', {
+      'url': testUrl,
+      'group': groupTag,
+      'nodes': wanted.length,
+      'probe': skipServiceCheck,
+    });
 
     final repo = _ref.read(proxyRepositoryProvider);
     final settled = Completer<Map<String, int>>();
