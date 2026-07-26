@@ -46,6 +46,7 @@ class _TikNetAppUpdateOverlayState extends ConsumerState<TikNetAppUpdateOverlay>
       TikNetAppUpdateAvailable(:final info) => info,
       TikNetAppUpdateDownloading(:final info) => info,
       TikNetAppUpdateError(:final info) => info,
+      TikNetAppUpdateChecking(:final previousInfo) => previousInfo,
       _ => null,
     };
 

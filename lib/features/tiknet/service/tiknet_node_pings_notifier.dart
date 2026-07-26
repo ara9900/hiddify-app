@@ -35,21 +35,20 @@ class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNe
     final service = ref.read(tikNetClientPingServiceProvider);
     final notifier = ref.read(connectionNotifierProvider.notifier);
 
-    try {
-      if (startedByUser && connected) {
-        return await service.measureNodePingsFromCore(catalog).timeout(const Duration(seconds: 50));
+    // Never start a proxy probe while the user intends VPN (Connecting / restore).
+    // That used to leave ServiceMode stuck on proxy.
+    if (startedByUser) {
+      if (!connected) {
+        throw StateError('vpn connecting — skip ping probe');
       }
-      // Pre-connect: real urltest via temporary proxy-mode core (not TCP).
-      return await notifier
-          .runUrlTestProbe(
-            () => service.measureNodePingsFromCore(catalog, skipServiceCheck: true),
-          )
-          .timeout(const Duration(seconds: 75));
-    } on TimeoutException {
-      return const {};
-    } catch (_) {
-      return const {};
+      return await service.measureNodePingsFromCore(catalog).timeout(const Duration(seconds: 50));
     }
+    // Pre-connect: real urltest via temporary proxy-mode core (not TCP).
+    return await notifier
+        .runUrlTestProbe(
+          () => service.measureNodePingsFromCore(catalog, skipServiceCheck: true),
+        )
+        .timeout(const Duration(seconds: 75));
   }
 }
 

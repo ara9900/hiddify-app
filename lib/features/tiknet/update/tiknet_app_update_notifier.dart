@@ -15,7 +15,8 @@ class TikNetAppUpdateIdle extends TikNetAppUpdateUiState {
 }
 
 class TikNetAppUpdateChecking extends TikNetAppUpdateUiState {
-  const TikNetAppUpdateChecking();
+  const TikNetAppUpdateChecking({this.previousInfo});
+  final TikNetAppUpdateInfo? previousInfo;
 }
 
 class TikNetAppUpdateUpToDate extends TikNetAppUpdateUiState {
@@ -51,9 +52,18 @@ class TikNetAppUpdateNotifier extends Notifier<TikNetAppUpdateUiState> {
     return int.tryParse(build) ?? 0;
   }
 
+  TikNetAppUpdateInfo? get _infoFromState => switch (state) {
+        TikNetAppUpdateAvailable(:final info) => info,
+        TikNetAppUpdateDownloading(:final info) => info,
+        TikNetAppUpdateError(:final info) => info,
+        TikNetAppUpdateChecking(:final previousInfo) => previousInfo,
+        _ => null,
+      };
+
   Future<void> checkForUpdate({bool forceRefresh = false}) async {
     if (state is TikNetAppUpdateChecking || state is TikNetAppUpdateDownloading) return;
-    state = const TikNetAppUpdateChecking();
+    final previous = _infoFromState;
+    state = TikNetAppUpdateChecking(previousInfo: previous);
     try {
       final info = await ref.read(tikNetAppUpdateServiceProvider).fetchUpdateInfo();
       if (!info.enabled || info.versionCode <= _installedVersionCode) {
@@ -63,7 +73,7 @@ class TikNetAppUpdateNotifier extends Notifier<TikNetAppUpdateUiState> {
       // Optional dismiss is session-only; every cold start shows again while outdated.
       state = TikNetAppUpdateAvailable(info);
     } catch (e) {
-      state = TikNetAppUpdateError('بررسی آپدیت ناموفق بود');
+      state = TikNetAppUpdateError('بررسی آپدیت ناموفق بود', info: previous);
     }
   }
 
@@ -89,7 +99,8 @@ class TikNetAppUpdateNotifier extends Notifier<TikNetAppUpdateUiState> {
             },
           );
       await TikNetApkInstaller.install(path);
-      state = const TikNetAppUpdateUpToDate();
+      // System installer is fire-and-forget; keep prompt (esp. force) until real upgrade.
+      state = TikNetAppUpdateAvailable(info);
     } catch (e) {
       state = TikNetAppUpdateError(
         e.toString().contains('امنیتی') ? e.toString() : 'دانلود یا نصب ناموفق بود',
@@ -103,6 +114,7 @@ class TikNetAppUpdateNotifier extends Notifier<TikNetAppUpdateUiState> {
     if (s is TikNetAppUpdateAvailable && s.info.force) return true;
     if (s is TikNetAppUpdateDownloading && s.info.force) return true;
     if (s is TikNetAppUpdateError && s.info?.force == true) return true;
+    if (s is TikNetAppUpdateChecking && s.previousInfo?.force == true) return true;
     return false;
   }
 }

@@ -127,14 +127,14 @@ void main() {
     expect(sorted.map((n) => n.tag).toList(), ['fast', 'slow', 'dead']);
   });
 
-  test('urlTestDelaysSettled requires non-zero delays for seen tags', () {
+  test('urlTestDelaysSettled requires non-zero delays for all wanted tags', () {
     expect(urlTestDelaysSettled({}, {'a'}), isFalse);
     expect(urlTestDelaysSettled({'a': 0}, {'a'}), isFalse);
     expect(urlTestDelaysSettled({'a': 120}, {'a'}), isTrue);
     expect(urlTestDelaysSettled({'a': 120, 'b': 0}, {'a', 'b'}), isFalse);
     expect(urlTestDelaysSettled({'a': 120, 'b': 65000}, {'a', 'b'}), isTrue);
-    // Tags not present in delays are ignored (other group).
-    expect(urlTestDelaysSettled({'a': 50}, {'a', 'missing'}), isTrue);
+    // Missing tags are not settled yet.
+    expect(urlTestDelaysSettled({'a': 50}, {'a', 'missing'}), isFalse);
   });
 
   test('delayByTagFromGroups prefers success over zero/fail', () {

@@ -320,9 +320,10 @@ class TikNetInternetTroubleshootService {
   TikNetTroubleshootItem _alwaysOnVpnHint(TikNetNativeNetworkSnapshot? native) {
     final app = native?.alwaysOnVpnApp;
     final lockdown = native?.alwaysOnVpnLockdown == true;
-    final ourPackageHint = app != null && (app.contains('tik') || app.contains('hiddify'));
     if (app != null && app.isNotEmpty) {
-      if (ourPackageHint || _tikNetVpnActive) {
+      // Only trust package id — TikNet being connected ≠ always-on owner.
+      final ours = app == 'com.tik.net' || app.endsWith('.tik.net');
+      if (ours) {
         return TikNetTroubleshootItem(
           id: 'always_on',
           title: 'VPN همیشه روشن',

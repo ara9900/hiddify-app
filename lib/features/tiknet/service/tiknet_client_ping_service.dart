@@ -55,19 +55,14 @@ Map<String, int> delayByTagFromGroups(Iterable<OutboundGroup> groups) {
   return out;
 }
 
-/// True when every [wanted] tag that appears in [delays] has a non-zero delay,
-/// and at least one wanted tag was observed.
+/// True when every [wanted] tag has a non-zero delay (success or fail sentinel).
 bool urlTestDelaysSettled(Map<String, int> delays, Set<String> wanted) {
   if (wanted.isEmpty) return true;
-  var seen = 0;
-  var done = 0;
   for (final tag in wanted) {
     final d = delays[tag];
-    if (d == null) continue;
-    seen++;
-    if (d != 0) done++;
+    if (d == null || d == 0) return false;
   }
-  return seen > 0 && done == seen;
+  return true;
 }
 
 /// Latency via sing-box urltest when core is up (user VPN or temporary probe).

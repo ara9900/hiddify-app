@@ -229,12 +229,15 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         if (!userTookOver) await _forceStopCore();
       }
       try {
-        if (!userTookOver && ref.read(ConfigOptions.serviceMode) != previousMode) {
+        // Always restore mode even if user took over — otherwise proxy sticks in prefs.
+        if (ref.read(ConfigOptions.serviceMode) != previousMode) {
           await ref.read(ConfigOptions.serviceMode.notifier).update(previousMode);
         }
       } catch (e, st) {
         loggy.warning("urltest probe restore serviceMode failed", e, st);
       }
+      if (!done.isCompleted) done.complete();
+      if (identical(_urlTestProbeDone, done)) _urlTestProbeDone = null;
       ref.read(tikNetUrlTestProbeActiveProvider.notifier).state = false;
       _urlTestProbeCancel = false;
       if (!userTookOver) {
@@ -243,18 +246,19 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       if (tikNetMode) {
         TikNetDiagnosticLog.i('ping', 'urltest probe end', {'user_took_over': userTookOver});
       }
-      if (!done.isCompleted) done.complete();
-      if (identical(_urlTestProbeDone, done)) _urlTestProbeDone = null;
     }
   }
 
   Future<void> _awaitUrlTestProbeIfActive() async {
-    if (!ref.read(tikNetUrlTestProbeActiveProvider)) return;
+    if (!ref.read(tikNetUrlTestProbeActiveProvider) && (_urlTestProbeDone == null || _urlTestProbeDone!.isCompleted)) {
+      return;
+    }
     _urlTestProbeCancel = true;
     final done = _urlTestProbeDone;
     if (done == null || done.isCompleted) return;
     try {
-      await done.future.timeout(const Duration(seconds: 25));
+      // Probe outer timeout is ~75s; wait long enough for finally to restore mode.
+      await done.future.timeout(const Duration(seconds: 90));
     } on TimeoutException {
       loggy.warning("waiting for urltest probe timed out");
     }
