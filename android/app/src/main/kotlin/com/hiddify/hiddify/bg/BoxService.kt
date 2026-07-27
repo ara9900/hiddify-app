@@ -293,7 +293,8 @@ class BoxService(
 //                Seq.destroyRef(refnum)
 //            }
 //            commandServer = null
-            Settings.startedByUser = false
+            // Do NOT clear flutter.started_by_user here. Flutter owns user intent;
+            // clearing it on every stop races Activity recreate → false reconnect bounce.
             withContext(Dispatchers.Main) {
                 Mobile.close(4L)
                 status.value = Status.Stopped
@@ -304,7 +305,7 @@ class BoxService(
     }
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
-        Settings.startedByUser = false
+        // Flutter clears started_by_user on intentional disconnect only.
         withContext(Dispatchers.Main) {
             if (receiverRegistered) {
                 service.unregisterReceiver(receiver)

@@ -81,9 +81,13 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     ref.listen(activeProfileProvider.select((value) => value.asData?.value), (previous, next) async {
       if (previous == null) return;
       final shouldReconnect = next == null || previous.id != next.id;
-      if (shouldReconnect) {
-        await reconnect(next);
+      if (!shouldReconnect) return;
+      // TikNet: profile id churn during sync must not bounce a live tunnel.
+      if (tikNetMode && ref.read(Preferences.startedByUser)) {
+        loggy.info("skip profile-id reconnect — TikNet VPN intent active");
+        return;
       }
+      await reconnect(next);
     });
     ref.watch(coreRestartSignalProvider);
 
@@ -91,6 +95,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       Future.microtask(() async {
         if (!ref.read(Preferences.startedByUser)) {
           if (ref.read(tikNetUrlTestProbeActiveProvider)) return;
+          // Never force-stop a live tunnel because of a prefs/status flicker.
+          if (await ref.read(hiddifyCoreServiceProvider).adoptRunningVpnSession()) {
+            loggy.info("startedByUser=false but VPN live — adopting, not force-stopping");
+            return;
+          }
           await _forceStopCore();
           return;
         }

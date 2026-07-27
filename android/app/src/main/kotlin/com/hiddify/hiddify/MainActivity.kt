@@ -58,6 +58,13 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         connection.reconnect()
     }
 
+    /** Binder-backed status when available; falls back to LiveData (may still be default Stopped). */
+    fun currentServiceStatus(): Status {
+        val fromBinder = connection.status
+        if (fromBinder != Status.Stopped) return fromBinder
+        return serviceStatus.value ?: Status.Stopped
+    }
+
     @SuppressLint("NewApi")
     fun startService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !ServiceNotification.checkPermission()) {

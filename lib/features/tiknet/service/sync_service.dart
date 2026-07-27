@@ -258,6 +258,12 @@ class SyncService {
       return true;
     }
 
+    // Don't delete/recreate remote profile while VPN is connected — that forces reconnect.
+    if (tikNetMode && _ref.read(Preferences.startedByUser)) {
+      TikNetDiagnosticLog.i('sync', 'skip remote profile replace — VPN stays up');
+      return existing != null;
+    }
+
     await _abortVpnIfNeeded();
 
     if (existing != null && existing is! RemoteProfileEntity) {
@@ -299,6 +305,22 @@ class SyncService {
       return true;
     }
 
+    // VPN is up: rewrite the same local profile file without abort/reconnect.
+    if (tikNetMode &&
+        _ref.read(Preferences.startedByUser) &&
+        existing != null &&
+        existing is! RemoteProfileEntity) {
+      final result = await repo
+          .offlineUpdate(existing.copyWith(userOverride: userOverride), content)
+          .run();
+      if (result.isLeft()) return false;
+      await _ref.read(Preferences.tikNetProfileId.notifier).update(existing.id);
+      await repo.setAsActive(existing.id).run();
+      _ref.invalidate(personalOutboundProvider);
+      TikNetDiagnosticLog.i('sync', 'profile updated on disk while VPN stays up');
+      return true;
+    }
+
     await _abortVpnIfNeeded();
 
     if (existing is RemoteProfileEntity) {
@@ -328,6 +350,12 @@ class SyncService {
   }
 
   Future<void> _abortVpnIfNeeded() async {
+    // Cold-start sync must NEVER kill a live TikNet tunnel just to rewrite the profile.
+    // Update on disk instead; tunnel keeps current config until the user reconnects.
+    if (tikNetMode && _ref.read(Preferences.startedByUser)) {
+      TikNetDiagnosticLog.i('sync', 'skip abortVpn — user VPN intent active');
+      return;
+    }
     final connection = switch (_ref.read(connectionNotifierProvider)) {
       AsyncData<ConnectionStatus>(value: final status) => status,
       _ => null,

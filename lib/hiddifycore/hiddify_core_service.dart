@@ -45,6 +45,7 @@ class HiddifyCoreService with InfraLogger {
   int _statusListenGeneration = 0;
 
   Future<void> init() async {
+    final alreadyUp = await core.isVpnServiceRunning().catchError((_) => false);
     await setup()
         .mapLeft((e) {
           loggy.error(e);
@@ -54,6 +55,12 @@ class HiddifyCoreService with InfraLogger {
         })
         .map((_) {
           loggy.info("Hiddify-core setup done");
+          // TikNet: if tunnel is already up, don't restart the connection notifier.
+          if (alreadyUp) {
+            currentState = const CoreStatus.started();
+            statusController.add(currentState);
+            return;
+          }
           ref.read(coreRestartSignalProvider.notifier).restart();
         })
         .run();
@@ -65,6 +72,7 @@ class HiddifyCoreService with InfraLogger {
       if (!await core.isVpnServiceRunning()) return false;
       currentState = const CoreStatus.started();
       statusController.add(currentState);
+      // Don't bump coreRestartSignal — that rebuilds ConnectionNotifier and can loop.
       await startListeningStatus("bg", core.bgClient);
       return true;
     } catch (e, st) {

@@ -106,6 +106,12 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
       final result = await _setupBackgroundOnce(path, name);
       if (result == const CoreStarted()) return result;
       if (result case CoreStopped(alert: CoreAlert.startService)) {
+        // Never kill a live tunnel on a false-negative start wait.
+        if (await isVpnServiceRunning()) {
+          _isBgClientAvailable = true;
+          loggy.info("start wait failed but VPN still up — adopt");
+          return const CoreStarted();
+        }
         loggy.warning("background core port not ready (attempt ${attempt + 1}), resetting…");
         await stop();
         await Future.delayed(const Duration(milliseconds: 600));
@@ -117,11 +123,15 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
   }
 
   Future<CoreStatus> _setupBackgroundOnce(String path, String name) async {
-    // If VPN/service gRPC is already up (app reopen while tunnel stays alive),
-    // do NOT stop+start — that is what users see as disconnect/reconnect.
+    // Hard guards: never stop+start an already-running tunnel.
     if (await isVpnServiceRunning()) {
       _isBgClientAvailable = true;
       loggy.info("background VPN already running — reattach without bounce");
+      return const CoreStarted();
+    }
+    if (await isActiveBg()) {
+      _isBgClientAvailable = true;
+      loggy.info("bg gRPC port open — reattach without bounce");
       return const CoreStarted();
     }
 
@@ -172,8 +182,9 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
       final status = await methodChannel.invokeMethod<String>("get_status");
       if (status == "Started") return true;
       if (status == "Starting") {
-        // Wait briefly for start to finish rather than killing it.
-        for (var i = 0; i < 10; i++) {
+        // Wait for bind / start to finish; also accept open gRPC as proof.
+        for (var i = 0; i < 15; i++) {
+          if (await isActiveBg()) return true;
           await Future.delayed(const Duration(milliseconds: 200));
           final again = await methodChannel.invokeMethod<String>("get_status");
           if (again == "Started") return true;

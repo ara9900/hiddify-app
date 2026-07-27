@@ -115,8 +115,22 @@ class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
                 scope.launch {
                     result.runCatching {
                         val mainActivity = MainActivity.instance
-                        val status = mainActivity.serviceStatus.value ?: Status.Stopped
-                        success(status.name)
+                        // LiveData defaults to Stopped until binder connects — wait briefly.
+                        var status = mainActivity.currentServiceStatus()
+                        if (status == Status.Stopped) {
+                            repeat(12) {
+                                delay(150)
+                                status = mainActivity.currentServiceStatus()
+                                if (status != Status.Stopped) return@repeat
+                            }
+                        }
+                        // Activity recreate: binder may still be Stopped while VPN is up.
+                        // Prefer user-intent flag over lying "Stopped" (that causes stop+start bounce).
+                        if (status == Status.Stopped && Settings.startedByUser) {
+                            success("Starting")
+                        } else {
+                            success(status.name)
+                        }
                     }
                 }
             }
@@ -131,11 +145,11 @@ class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
                         Settings.grpcServiceModePort = args["grpcPort"] as Int
 
                         val mainActivity = MainActivity.instance
-//                        val started = mainActivity.serviceStatus.value == Status.Started
-//                        if (started) {
-//                            Log.w(TAG, "service is already running")
-//                            return@launch success(true)
-//                        }
+                        val already = mainActivity.currentServiceStatus()
+                        if (already == Status.Started || already == Status.Starting) {
+                            Log.w(TAG, "service already $already — skip start")
+                            return@launch success(true)
+                        }
                         Settings.startCoreAfterStartingService = false
 
                         mainActivity.startService()

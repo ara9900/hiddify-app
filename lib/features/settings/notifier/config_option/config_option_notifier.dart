@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dartx/dartx_io.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/features/connection/data/connection_data_providers.dart';
@@ -27,6 +28,8 @@ class ConfigOptionNotifier extends _$ConfigOptionNotifier with AppLogger {
 
     ref.listen(ConfigOptions.singboxConfigOptions, (previous, next) async {
       if (!serviceRunning || previous == null) return;
+      // TikNet: panel sync updates ping URL etc. Must not bounce the live tunnel.
+      if (tikNetMode) return;
       if (next != previous && next != serviceSingboxOptions) {
         if (_lastUpdate == null || DateTime.now().difference(_lastUpdate!) > const Duration(milliseconds: 100)) {
           _lastUpdate = DateTime.now();
