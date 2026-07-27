@@ -19,6 +19,7 @@ import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/tiknet/update/tiknet_app_update_overlay.dart';
+import 'package:hiddify/features/tiknet/splash/tiknet_animated_splash.dart';
 import 'package:hiddify/core/theme/app_theme.dart';
 import 'package:hiddify/core/theme/theme_preferences.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
@@ -55,12 +56,18 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
   }
 
   void onResume(WidgetRef ref) {
-    ref.read(hiddifyCoreServiceProvider).init();
+    // TikNet keeps the FG core channel open while VPN is on (see onPause).
+    // Re-running init() here cancels the status stream (emits STOPPED) and
+    // triggers restoreVpnSessionIfNeeded → visible disconnect/reconnect.
+    final keepVpnChannel = tikNetMode && ref.read(Preferences.startedByUser);
+    if (!keepVpnChannel) {
+      ref.read(hiddifyCoreServiceProvider).init();
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (isOnPauseCalled && PlatformUtils.isAndroid) {
         ref.invalidate(perAppProxyServiceProvider);
-        if (tikNetMode && ref.read(Preferences.startedByUser)) {
+        if (tikNetMode && ref.read(Preferences.startedByUser) && !keepVpnChannel) {
           unawaited(ref.read(connectionNotifierProvider.notifier).restoreVpnSessionIfNeeded());
         }
       }
@@ -110,13 +117,7 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
                     final theme = Theme.of(context);
                     final routedChild = child ?? const SizedBox();
                     final wrappedChild = tikNetMode
-                        ? Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              routedChild,
-                              const TikNetAppUpdateOverlay(),
-                            ],
-                          )
+                        ? _TikNetRootStack(routedChild: routedChild)
                         : UpgradeAlert(
                             upgrader: ref.watch(upgraderProvider),
                             navigatorKey: router.routerDelegate.navigatorKey,
@@ -160,5 +161,37 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
       }
       return null;
     }, [appLifecycleState]);
+  }
+}
+
+/// Hosts TikNet overlays. Keeps the cinematic splash until it finishes once per process.
+class _TikNetRootStack extends StatefulWidget {
+  const _TikNetRootStack({required this.routedChild});
+
+  final Widget routedChild;
+
+  @override
+  State<_TikNetRootStack> createState() => _TikNetRootStackState();
+}
+
+class _TikNetRootStackState extends State<_TikNetRootStack> {
+  late bool _showSplash = !tikNetStartupSplashCompleted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.routedChild,
+        const TikNetAppUpdateOverlay(),
+        if (_showSplash)
+          TikNetAnimatedSplash(
+            onFinished: () {
+              if (!mounted) return;
+              setState(() => _showSplash = false);
+            },
+          ),
+      ],
+    );
   }
 }

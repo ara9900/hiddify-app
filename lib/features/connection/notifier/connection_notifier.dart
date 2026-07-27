@@ -280,15 +280,28 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     }
   }
 
-  /// After app reopen / resume when user had VPN enabled.
+  /// After app reopen / process death when user had VPN enabled.
+  ///
+  /// Do not call this on a normal TikNet resume while the FG channel was kept open —
+  /// status briefly flickers to STOPPED and a full reconnect would bounce the tunnel.
   Future<void> restoreVpnSessionIfNeeded() async {
     if (!tikNetMode || !ref.read(Preferences.startedByUser)) return;
-    await Future<void>.delayed(const Duration(milliseconds: 2000));
+
+    // Wait for status to settle (cold start / channel rebind), checking multiple times.
+    for (var i = 0; i < 6; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (!ref.read(Preferences.startedByUser)) return;
+      if (state case AsyncData(:final value)) {
+        if (value is Connected || value is Connecting) return;
+      }
+    }
+
     if (!ref.read(Preferences.startedByUser)) return;
     if (state case AsyncData(:final value)) {
       if (value is Connected || value is Connecting) return;
     }
-    loggy.info("restoring VPN session after app resume");
+
+    loggy.info("restoring VPN session after app open");
     if (tikNetMode) TikNetDiagnosticLog.i('vpn', 'auto-restore after app open');
     await mayConnect();
   }
