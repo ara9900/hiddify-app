@@ -25,6 +25,7 @@ import 'package:hiddify/features/settings/overview/sections/warp_options_page.da
 import 'package:hiddify/features/settings/overview/settings_page.dart';
 import 'package:hiddify/features/tiknet/app_filter/tiknet_app_filter_page.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
+import 'package:hiddify/features/tiknet/connection/tiknet_connection_details_page.dart';
 import 'package:hiddify/features/tiknet/login/tiknet_qr_login_parser.dart';
 import 'package:hiddify/features/tiknet/login/tiknet_splash_screen.dart';
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
@@ -37,6 +38,7 @@ part 'routing_config_notifier.g.dart';
 // each branch in go router has its own focus scope
 final branchesScope = <String, FocusScopeNode>{
   'home': FocusScopeNode(),
+  'connectionDetails': FocusScopeNode(),
   'profiles': FocusScopeNode(),
   'settings': FocusScopeNode(),
   'logs': FocusScopeNode(),
@@ -51,14 +53,14 @@ final loadingConfig = RoutingConfig(
 );
 
 String getNameOfBranch(bool isMobileBreakpoint, bool showProfilesAction, int index, {bool tikNet = false}) {
-  if (tikNet) return ['home', 'perAppProxy', 'userInfo'][index];
+  if (tikNet) return ['home', 'connectionDetails', 'perAppProxy', 'userInfo'][index];
   return isMobileBreakpoint
       ? ['home', 'settings'][index]
       : ['home', if (showProfilesAction) 'profiles', 'settings', 'logs', 'about'][index];
 }
 
 int getIndexOfBranch(bool isMobileBreakpoint, bool showProfilesAction, String name, {bool tikNet = false}) {
-  if (tikNet) return ['home', 'perAppProxy', 'userInfo'].indexOf(name);
+  if (tikNet) return ['home', 'connectionDetails', 'perAppProxy', 'userInfo'].indexOf(name);
   return isMobileBreakpoint
       ? ['home', 'settings'].indexOf(name)
       : ['home', if (showProfilesAction) 'profiles', 'settings', 'logs', 'about'].indexOf(name);
@@ -327,6 +329,18 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                   name: 'home',
                   path: '/home',
                   builder: (_, _) => FocusScope(node: branchesScope['home'], child: const HomePage()),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: <GoRoute>[
+                GoRoute(
+                  name: 'connectionDetails',
+                  path: '/connection-details',
+                  builder: (_, _) => FocusScope(
+                    node: branchesScope['connectionDetails'],
+                    child: const TikNetConnectionDetailsPage(),
+                  ),
                 ),
               ],
             ),

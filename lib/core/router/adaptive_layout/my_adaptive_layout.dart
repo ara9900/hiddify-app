@@ -86,7 +86,7 @@ class MyAdaptiveLayout extends HookConsumerWidget {
             ? FocusScope(
                 node: navScopeNode,
                 child: NavigationBar(
-                  selectedIndex: navigationShell.currentIndex <= (tikNetMode ? 2 : 1) ? navigationShell.currentIndex : 0,
+                  selectedIndex: navigationShell.currentIndex <= (tikNetMode ? 3 : 1) ? navigationShell.currentIndex : 0,
                   destinations: _navDests(_actions(t, showProfilesAction, isMobileBreakpoint, tikNetMode)),
                   onDestinationSelected: (index) => _onTap(context, index),
                 ),
@@ -115,6 +115,7 @@ class MyAdaptiveLayout extends HookConsumerWidget {
     if (tikNetMode) {
       return [
         ShellRouteAction(Icons.shield_rounded, 'اتصال'),
+        ShellRouteAction(Icons.analytics_rounded, 'جزئیات'),
         ShellRouteAction(Icons.apps_rounded, 'فیلتر اپ‌ها'),
         ShellRouteAction(Icons.person_rounded, 'حساب من'),
       ];

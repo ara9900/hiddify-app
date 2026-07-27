@@ -3,14 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
-import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/tiknet_theme.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
-import 'package:hiddify/features/tiknet/connection/tiknet_connection_stats_provider.dart';
-import 'package:hiddify/features/tiknet/connection/tiknet_connection_uptime_provider.dart';
 import 'package:hiddify/features/tiknet/connection/tiknet_server_picker.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/announcement_service.dart';
@@ -23,8 +20,7 @@ import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_app_version_label.dart';
-import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
-import 'package:hiddify/utils/number_formatters.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -35,8 +31,6 @@ class TikNetConnectionPage extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final connectionStatus = ref.watch(connectionNotifierProvider);
-    final connectionStats = ref.watch(tiknetConnectionStatsProvider).valueOrNull;
-    final uptime = ref.watch(tiknetConnectionUptimeProvider).valueOrNull;
     final requiresReconnect = ref.watch(configOptionNotifierProvider).valueOrNull ?? false;
 
     final selected = ref.watch(selectedServerProvider);
@@ -104,7 +98,6 @@ class TikNetConnectionPage extends HookConsumerWidget {
         ref.read(tikNetTelemetryServiceProvider).send('connect_success');
         unawaited(applyTikNetPersonalOutboundSelection(ref));
       } else if (wasConnected && !isConnectedNow) {
-        // Smart stick ends when user disconnects; next connect re-pings.
         unawaited(clearTikNetSmartLockWidget(ref));
         ref.read(tikNetSmartPickingProvider.notifier).state = false;
       } else if (next case AsyncError(:final error) when prev is! AsyncError) {
@@ -160,6 +153,8 @@ class TikNetConnectionPage extends HookConsumerWidget {
                       ),
                       const Gap(16),
                       const TikNetServerSelectorCard(),
+                      const Gap(16),
+                      const _AnnouncementBox(),
                       const Gap(28),
                       Center(
                         child: AbsorbPointer(
@@ -222,17 +217,6 @@ class TikNetConnectionPage extends HookConsumerWidget {
                                   : 'برای اتصال به سرور انتخابی بزنید',
                           style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
                         ),
-                      ),
-                      const Gap(24),
-                      const _AnnouncementBox(),
-                      const Gap(20),
-                      _StatsCard(
-                        isConnected: isConnected,
-                        uptime: uptime,
-                        serverInfo: serverInfo,
-                        uplink: connectionStats?.uplink,
-                        downlink: connectionStats?.downlink,
-                        outboundTag: connectionStats?.outboundTag,
                       ),
                     ],
                   ),
@@ -321,129 +305,6 @@ class _ConnectionStatusHero extends StatelessWidget {
       ),
     );
   }
-}
-
-class _StatsCard extends StatelessWidget {
-  const _StatsCard({
-    required this.isConnected,
-    required this.serverInfo,
-    this.uptime,
-    this.uplink,
-    this.downlink,
-    this.outboundTag,
-  });
-
-  final bool isConnected;
-  final TikNetSelectedServerInfo serverInfo;
-  final String? uptime;
-  final int? uplink;
-  final int? downlink;
-  final String? outboundTag;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('جزئیات اتصال', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-            const Gap(14),
-            _StatRow(
-              icon: Icons.wifi_tethering_rounded,
-              label: 'وضعیت VPN',
-              value: isConnected ? 'متصل' : 'قطع',
-              valueColor: isConnected ? TikNetColors.connected : TikNetColors.disconnected,
-            ),
-            const _StatDivider(),
-            _StatRow(icon: Icons.dns_rounded, label: 'سرور فعال', value: serverInfo.title),
-            if (serverInfo.pingLabel != null && serverInfo.pingColor != null) ...[
-              const _StatDivider(),
-              Row(
-                children: [
-                  const Icon(Icons.speed_rounded, size: 18, color: TikNetColors.onSurfaceVariant),
-                  const Gap(12),
-                  Expanded(
-                    child: Text('پینگ سرور', style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant)),
-                  ),
-                  TikNetPingChip(label: serverInfo.pingLabel!, color: serverInfo.pingColor!, compact: true),
-                ],
-              ),
-            ],
-            const _StatDivider(),
-            _StatRow(
-              icon: Icons.schedule_rounded,
-              label: 'مدت اتصال',
-              value: isConnected ? (uptime ?? '—') : '—',
-            ),
-            const _StatDivider(),
-            _StatRow(
-              icon: Icons.arrow_downward_rounded,
-              label: 'دانلود',
-              value: isConnected && downlink != null ? toPersianDigits(downlink!.speed()) : '—',
-            ),
-            const _StatDivider(),
-            _StatRow(
-              icon: Icons.arrow_upward_rounded,
-              label: 'آپلود',
-              value: isConnected && uplink != null ? toPersianDigits(uplink!.speed()) : '—',
-            ),
-            if (outboundTag != null && outboundTag!.isNotEmpty) ...[
-              const _StatDivider(),
-              _StatRow(icon: Icons.route_rounded, label: 'مسیر', value: outboundTag!),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatRow extends StatelessWidget {
-  const _StatRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color? valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: TikNetColors.onSurfaceVariant),
-        const Gap(12),
-        Expanded(
-          child: Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant)),
-        ),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: valueColor,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatDivider extends StatelessWidget {
-  const _StatDivider();
-
-  @override
-  Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 12),
-        child: Divider(height: 1, color: TikNetColors.border),
-      );
 }
 
 class _AlertBanner extends StatelessWidget {
