@@ -117,6 +117,14 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
   }
 
   Future<CoreStatus> _setupBackgroundOnce(String path, String name) async {
+    // If VPN/service gRPC is already up (app reopen while tunnel stays alive),
+    // do NOT stop+start — that is what users see as disconnect/reconnect.
+    if (await isVpnServiceRunning()) {
+      _isBgClientAvailable = true;
+      loggy.info("background VPN already running — reattach without bounce");
+      return const CoreStarted();
+    }
+
     if (!await stop()) return const CoreStatus.stopped(alert: CoreAlert.createService);
     _status.clean();
     await methodChannel.invokeMethod("start", {
@@ -156,6 +164,26 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
       return const CoreStatus.stopped(alert: CoreAlert.startService, message: "starting background core...");
     }
     return const CoreStarted();
+  }
+
+  /// True when Android VPN/box service is Started, or bg gRPC port is already open.
+  Future<bool> isVpnServiceRunning() async {
+    try {
+      final status = await methodChannel.invokeMethod<String>("get_status");
+      if (status == "Started") return true;
+      if (status == "Starting") {
+        // Wait briefly for start to finish rather than killing it.
+        for (var i = 0; i < 10; i++) {
+          await Future.delayed(const Duration(milliseconds: 200));
+          final again = await methodChannel.invokeMethod<String>("get_status");
+          if (again == "Started") return true;
+          if (again == "Stopped" || again == "Stopping") break;
+        }
+      }
+    } catch (_) {
+      // Older builds without get_status — fall through to port check.
+    }
+    return isActiveBg();
   }
 
   @override

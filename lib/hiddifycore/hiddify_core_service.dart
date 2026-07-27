@@ -42,6 +42,7 @@ class HiddifyCoreService with InfraLogger {
   final CallOptions? grpcOptions = null; //CallOptions(timeout: const Duration(milliseconds: 10000));
   final Map<String, StreamSubscription?> subscriptions = {};
   List<OutboundGroup> latest = [];
+  int _statusListenGeneration = 0;
 
   Future<void> init() async {
     await setup()
@@ -56,6 +57,20 @@ class HiddifyCoreService with InfraLogger {
           ref.read(coreRestartSignalProvider.notifier).restart();
         })
         .run();
+  }
+
+  /// Reattach UI/status to an already-running Android VPN without stop/start.
+  Future<bool> adoptRunningVpnSession() async {
+    try {
+      if (!await core.isVpnServiceRunning()) return false;
+      currentState = const CoreStatus.started();
+      statusController.add(currentState);
+      await startListeningStatus("bg", core.bgClient);
+      return true;
+    } catch (e, st) {
+      loggy.warning("adoptRunningVpnSession failed", e, st);
+      return false;
+    }
   }
 
   /// validates config by path and save it
@@ -455,36 +470,22 @@ class HiddifyCoreService with InfraLogger {
   }
 
   Future<void> startListeningStatus(String key, CoreClient cc) async {
+    final generation = ++_statusListenGeneration;
     await listenSingle<CoreStatus>(
       "${key}StatusListener",
       () => cc
           .coreInfoListener(Empty(), options: grpcOptions)
-          .doOnCancel(() {
-            loggy.error("status", "Canceld");
-            if (currentState == const CoreStatus.started()) currentState = const CoreStatus.stopped();
-          })
-          .doOnData((event) {
-            loggy.debug("status", event);
-            if (currentState == const CoreStatus.started()) currentState = const CoreStatus.stopped();
-          })
-          .doOnDone(() {
-            loggy.error("status", "done");
-            if (currentState == const CoreStatus.started()) currentState = const CoreStatus.stopped();
-          })
-          .endWith(CoreInfoResponse(coreState: CoreStates.STOPPED))
           .map((event) {
+            // Ignore events from a replaced/cancelled listener (prevents false STOPPED on resume).
+            if (generation != _statusListenGeneration) {
+              return currentState;
+            }
             currentState = CoreStatus.fromCoreInfo(event);
             statusController.add(currentState);
             return currentState;
           }),
-      // .endWith(const CoreStatus.stopped())
       onError: (error) {
         loggy.error("Stream error in ${key}StatusListener: $error");
-
-        // currentState = const CoreStatus.stopped();
-        // statusController.add(currentState);
-
-        // startListeningStatus(key, cc);
       },
     );
   }

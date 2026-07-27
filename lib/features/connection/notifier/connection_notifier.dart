@@ -31,6 +31,9 @@ part 'connection_notifier.g.dart';
 /// True while TikNet temporarily starts core in proxy mode for urltest (UI stays disconnected).
 final tikNetUrlTestProbeActiveProvider = StateProvider<bool>((ref) => false);
 
+/// Prevents stacked auto-restores when coreRestartSignal rebuilds the notifier.
+DateTime? _tikNetLastRestoreAttempt;
+
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   /// While true, UI stays on disconnecting until core reports stopped (avoids CONNECTING loop).
@@ -91,6 +94,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           await _forceStopCore();
           return;
         }
+        final last = _tikNetLastRestoreAttempt;
+        if (last != null && DateTime.now().difference(last) < const Duration(seconds: 8)) {
+          return;
+        }
+        _tikNetLastRestoreAttempt = DateTime.now();
         await restoreVpnSessionIfNeeded();
       });
     }
@@ -287,13 +295,20 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   Future<void> restoreVpnSessionIfNeeded() async {
     if (!tikNetMode || !ref.read(Preferences.startedByUser)) return;
 
-    // Wait for status to settle (cold start / channel rebind), checking multiple times.
-    for (var i = 0; i < 6; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+    final core = ref.read(hiddifyCoreServiceProvider);
+
+    // Prefer adopting an already-running tunnel — never bounce it.
+    for (var i = 0; i < 8; i++) {
       if (!ref.read(Preferences.startedByUser)) return;
       if (state case AsyncData(:final value)) {
         if (value is Connected || value is Connecting) return;
       }
+      if (await core.adoptRunningVpnSession()) {
+        loggy.info("VPN service still running — adopted session without reconnect");
+        TikNetDiagnosticLog.i('vpn', 'adopt existing session (no bounce)');
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 400));
     }
 
     if (!ref.read(Preferences.startedByUser)) return;
@@ -302,7 +317,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     }
 
     loggy.info("restoring VPN session after app open");
-    if (tikNetMode) TikNetDiagnosticLog.i('vpn', 'auto-restore after app open');
+    TikNetDiagnosticLog.i('vpn', 'auto-restore after app open');
     await mayConnect();
   }
 
@@ -377,6 +392,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   Future<void> _connectThrottled() async {
+    // Tunnel already up (app reopen) — never bounce via stop/start.
+    if (tikNetMode && await ref.read(hiddifyCoreServiceProvider).adoptRunningVpnSession()) {
+      loggy.info("skip connect — VPN already running");
+      TikNetDiagnosticLog.i('vpn', 'skip connect; already running');
+      return;
+    }
     final activeProfile = await ref.read(activeProfileProvider.future);
     if (activeProfile == null) {
       loggy.info("no active profile, not connecting");

@@ -32,6 +32,7 @@ class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
             Start("start"),
             Stop("stop"),
             Restart("restart"),
+            GetStatus("get_status"),
             AddGrpcClientPublicKey("add_grpc_client_public_key"),
             GetGrpcServerPublicKey("get_grpc_server_public_key"),
 
@@ -109,6 +110,16 @@ class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
                 }
             }
 
+
+            Trigger.GetStatus.method -> {
+                scope.launch {
+                    result.runCatching {
+                        val mainActivity = MainActivity.instance
+                        val status = mainActivity.serviceStatus.value ?: Status.Stopped
+                        success(status.name)
+                    }
+                }
+            }
 
             Trigger.Start.method -> {
                 scope.launch {

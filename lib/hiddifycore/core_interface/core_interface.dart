@@ -43,6 +43,11 @@ class CoreInterface {
     return true;
   }
 
+  /// True when the platform VPN/box service is already running (no bounce needed).
+  Future<bool> isVpnServiceRunning() async {
+    return isActiveBg();
+  }
+
   bool isInitialized() {
     try {
       bgClient; // touch it
