@@ -19,7 +19,6 @@ import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/tiknet/update/tiknet_app_update_overlay.dart';
-import 'package:hiddify/features/tiknet/splash/tiknet_animated_splash.dart';
 import 'package:hiddify/core/theme/app_theme.dart';
 import 'package:hiddify/core/theme/theme_preferences.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
@@ -164,33 +163,19 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
   }
 }
 
-/// Hosts TikNet overlays. Keeps the cinematic splash until it finishes once per process.
-class _TikNetRootStack extends StatefulWidget {
+/// Hosts TikNet overlays (no long cinematic splash — that blocked startup).
+class _TikNetRootStack extends StatelessWidget {
   const _TikNetRootStack({required this.routedChild});
 
   final Widget routedChild;
-
-  @override
-  State<_TikNetRootStack> createState() => _TikNetRootStackState();
-}
-
-class _TikNetRootStackState extends State<_TikNetRootStack> {
-  late bool _showSplash = !tikNetStartupSplashCompleted;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        widget.routedChild,
+        routedChild,
         const TikNetAppUpdateOverlay(),
-        if (_showSplash)
-          TikNetAnimatedSplash(
-            onFinished: () {
-              if (!mounted) return;
-              setState(() => _showSplash = false);
-            },
-          ),
       ],
     );
   }

@@ -274,10 +274,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     final done = _urlTestProbeDone;
     if (done == null || done.isCompleted) return;
     try {
-      // Probe outer timeout is ~75s; wait long enough for finally to restore mode.
-      await done.future.timeout(const Duration(seconds: 90));
+      // Keep the connect button responsive — never block tens of seconds on probe cleanup.
+      await done.future.timeout(const Duration(seconds: 3));
     } on TimeoutException {
-      loggy.warning("waiting for urltest probe timed out");
+      loggy.warning("waiting for urltest probe timed out — force stop");
+      if (tikNetMode) TikNetDiagnosticLog.w('vpn', 'probe wait timeout, force stop');
+      await _forceStopCore();
     }
   }
 
@@ -339,11 +341,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     } else if (state case AsyncData(:final value)) {
       switch (value) {
         case Disconnected():
-          // Abort temporary urltest probe before real user connect.
-          await _awaitUrlTestProbeIfActive();
+          // Mark user intent first so any active urltest probe aborts immediately.
           await haptic.lightImpact();
           _ignoreCoreUntilStopped = false;
           await ref.read(Preferences.startedByUser.notifier).update(true);
+          await _awaitUrlTestProbeIfActive();
           await _connect();
         case Connected():
           await haptic.mediumImpact();

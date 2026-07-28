@@ -233,7 +233,10 @@ class TikNetClientPingService {
         const Duration(seconds: 35),
         onTimeout: () => Map<String, int>.from(latest),
       );
-      final result = _delaysFromMap(delays, nodes);
+      var result = _delaysFromMap(delays, nodes);
+      // Stock AAR often fails Reality urltest (65000) while dial still works.
+      // TCP to host:port upgrades false "قطع"; missing probe → "—" not قطع.
+      result = await enrichUrlTestFailsWithTcp(result, nodes);
       final reachable = result.values.where((r) => r.state == TikNetClientPingState.reachable).length;
       final unreachable = result.values.where((r) => r.state == TikNetClientPingState.unreachable).length;
       final missing = result.values.where((r) => r.state == TikNetClientPingState.noTarget).length;
@@ -263,29 +266,87 @@ class TikNetClientPingService {
     Map<String, int> delayByTag,
     List<TikNetPersonalProxyNode> nodes,
   ) {
-    final out = <String, TikNetClientPingResult>{};
-    for (final node in nodes) {
-      final delay = delayByTag[node.tag];
-      if (delay == null) {
-        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
-        continue;
-      }
-      // 0 = not tested yet / unset — must NOT show as "قطع" (false negative).
-      if (delay <= 0) {
-        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
-        continue;
-      }
-      if (delay >= 65000) {
-        out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
-        continue;
-      }
-      out[node.tag] = TikNetClientPingResult(
-        state: TikNetClientPingState.reachable,
-        pingMs: delay,
-      );
-    }
-    return out;
+    return delaysToPingResults(delayByTag, nodes);
   }
+}
+
+/// Map urltest delays → ping results (pure; unit-testable).
+Map<String, TikNetClientPingResult> delaysToPingResults(
+  Map<String, int> delayByTag,
+  List<TikNetPersonalProxyNode> nodes,
+) {
+  final out = <String, TikNetClientPingResult>{};
+  for (final node in nodes) {
+    final delay = delayByTag[node.tag];
+    if (delay == null) {
+      out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+      continue;
+    }
+    // 0 = not tested yet / unset — must NOT show as "قطع" (false negative).
+    if (delay <= 0) {
+      out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+      continue;
+    }
+    if (delay >= 65000) {
+      // urltest timeout — may be a Reality false-negative; TCP enrich may upgrade.
+      out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
+      continue;
+    }
+    out[node.tag] = TikNetClientPingResult(
+      state: TikNetClientPingState.reachable,
+      pingMs: delay,
+    );
+  }
+  return out;
+}
+
+/// For urltest failures (65000 / قطع): TCP-reach the probe host.
+/// - TCP OK → show as reachable (port open; dial often works even when urltest fails)
+/// - no probe URL → "—" (noTarget), never false قطع
+/// - TCP fail → keep قطع
+Future<Map<String, TikNetClientPingResult>> enrichUrlTestFailsWithTcp(
+  Map<String, TikNetClientPingResult> results,
+  List<TikNetPersonalProxyNode> nodes, {
+  Duration timeout = const Duration(seconds: 3),
+  int concurrency = 6,
+  Future<Map<String, TikNetClientPingResult>> Function(
+    List<TikNetPersonalProxyNode> nodes, {
+    Duration timeout,
+    int concurrency,
+  })? tcpMeasure,
+}) async {
+  final need = <TikNetPersonalProxyNode>[];
+  for (final node in nodes) {
+    if (results[node.tag]?.state == TikNetClientPingState.unreachable) {
+      need.add(node);
+    }
+  }
+  if (need.isEmpty) return results;
+
+  final measure = tcpMeasure ?? measureNodesTcp;
+  final tcp = await measure(need, timeout: timeout, concurrency: concurrency);
+  final out = Map<String, TikNetClientPingResult>.from(results);
+  var upgraded = 0;
+  var softened = 0;
+  for (final node in need) {
+    final t = tcp[node.tag];
+    if (t == null) continue;
+    if (t.state == TikNetClientPingState.reachable) {
+      out[node.tag] = t;
+      upgraded++;
+    } else if (t.state == TikNetClientPingState.noTarget || parseProbeTarget(node.probeUrl) == null) {
+      out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.noTarget);
+      softened++;
+    }
+  }
+  if (upgraded > 0 || softened > 0) {
+    TikNetDiagnosticLog.i('ping', 'tcp fallback after urltest fail', {
+      'candidates': need.length,
+      'upgraded': upgraded,
+      'softened': softened,
+    });
+  }
+  return out;
 }
 
 /// Sort nodes by ping ascending (reachable first); missing / unreachable last.

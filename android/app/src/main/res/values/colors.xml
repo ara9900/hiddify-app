@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
+    <color name="tiknet_splash_bg">#020617</color>
 </resources>

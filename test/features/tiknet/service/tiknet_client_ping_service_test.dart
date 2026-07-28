@@ -163,4 +163,71 @@ void main() {
     expect(delays['n1'], 85);
     expect(delays['n2'], 40);
   });
+
+  test('delaysToPingResults maps 0/missing to noTarget and 65000 to unreachable', () {
+    const nodes = [
+      TikNetPersonalProxyNode(tag: 'ok', groupTag: 'Select', label: 'ok'),
+      TikNetPersonalProxyNode(tag: 'zero', groupTag: 'Select', label: 'zero'),
+      TikNetPersonalProxyNode(tag: 'fail', groupTag: 'Select', label: 'fail'),
+      TikNetPersonalProxyNode(tag: 'gone', groupTag: 'Select', label: 'gone'),
+    ];
+    final results = delaysToPingResults(
+      {'ok': 42, 'zero': 0, 'fail': 65000},
+      nodes,
+    );
+    expect(results['ok']?.state, TikNetClientPingState.reachable);
+    expect(results['ok']?.pingMs, 42);
+    expect(results['zero']?.state, TikNetClientPingState.noTarget);
+    expect(results['fail']?.state, TikNetClientPingState.unreachable);
+    expect(results['gone']?.state, TikNetClientPingState.noTarget);
+  });
+
+  test('enrichUrlTestFailsWithTcp upgrades Reality false-قطع when TCP works', () async {
+    const nodes = [
+      TikNetPersonalProxyNode(
+        tag: 'reality',
+        groupTag: 'Select',
+        label: 'reality',
+        probeUrl: 'https://31.216.62.129:2086',
+      ),
+      TikNetPersonalProxyNode(
+        tag: 'dead',
+        groupTag: 'Select',
+        label: 'dead',
+        probeUrl: 'https://127.0.0.1:1',
+      ),
+      const TikNetPersonalProxyNode(
+        tag: 'noprobe',
+        groupTag: 'Select',
+        label: 'noprobe',
+        probeUrl: '',
+      ),
+    ];
+    final before = {
+      'reality': const TikNetClientPingResult(state: TikNetClientPingState.unreachable),
+      'dead': const TikNetClientPingResult(state: TikNetClientPingState.unreachable),
+      'noprobe': const TikNetClientPingResult(state: TikNetClientPingState.unreachable),
+    };
+    final after = await enrichUrlTestFailsWithTcp(
+      before,
+      nodes,
+      tcpMeasure: (list, {timeout = const Duration(seconds: 3), concurrency = 6}) async {
+        return {
+          for (final n in list)
+            n.tag: switch (n.tag) {
+              'reality' => const TikNetClientPingResult(
+                state: TikNetClientPingState.reachable,
+                pingMs: 55,
+              ),
+              'noprobe' => const TikNetClientPingResult(state: TikNetClientPingState.noTarget),
+              _ => const TikNetClientPingResult(state: TikNetClientPingState.unreachable),
+            },
+        };
+      },
+    );
+    expect(after['reality']?.state, TikNetClientPingState.reachable);
+    expect(after['reality']?.pingMs, 55);
+    expect(after['dead']?.state, TikNetClientPingState.unreachable);
+    expect(after['noprobe']?.state, TikNetClientPingState.noTarget);
+  });
 }

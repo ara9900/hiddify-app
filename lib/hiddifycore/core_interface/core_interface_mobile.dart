@@ -176,15 +176,16 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
     return const CoreStarted();
   }
 
-  /// True when Android VPN/box service is Started, or bg gRPC port is already open.
+  /// True when Android VPN/box service is actually Started (TUN up).
+  ///
+  /// Do NOT treat an open proxy-mode gRPC port as "VPN running" — that leftover
+  /// from urltest probes caused connect to no-op while the UI stayed disconnected.
   Future<bool> isVpnServiceRunning() async {
     try {
       final status = await methodChannel.invokeMethod<String>("get_status");
       if (status == "Started") return true;
       if (status == "Starting") {
-        // Wait for bind / start to finish; also accept open gRPC as proof.
         for (var i = 0; i < 15; i++) {
-          if (await isActiveBg()) return true;
           await Future.delayed(const Duration(milliseconds: 200));
           final again = await methodChannel.invokeMethod<String>("get_status");
           if (again == "Started") return true;
@@ -192,9 +193,9 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
         }
       }
     } catch (_) {
-      // Older builds without get_status — fall through to port check.
+      // Older builds without get_status.
     }
-    return isActiveBg();
+    return false;
   }
 
   @override

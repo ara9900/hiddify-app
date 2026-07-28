@@ -159,14 +159,9 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
     ),
   );
 
-  // TikNet: keep native splash until the cinematic overlay paints its first frame.
-  if (!kIsWeb && !tikNetMode) {
+  // Remove native splash as soon as Flutter paints — no cinematic overlay delay.
+  if (!kIsWeb) {
     FlutterNativeSplash.remove();
-  } else if (!kIsWeb && tikNetMode) {
-    // Safety: never leave the native splash stuck if overlay fails to mount.
-    unawaited(
-      Future<void>.delayed(const Duration(seconds: 6), FlutterNativeSplash.remove),
-    );
   }
 }
 

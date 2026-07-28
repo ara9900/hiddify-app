@@ -185,7 +185,10 @@ class TikNetConnectionPage extends HookConsumerWidget {
                                 );
                                 final sync = ref.read(syncServiceProvider);
                                 try {
-                                  final ok = await sync.syncAllAndApplyProfile();
+                                  final ok = await sync.syncAllAndApplyProfile().timeout(
+                                    const Duration(seconds: 25),
+                                    onTimeout: () => false,
+                                  );
                                   if (!context.mounted) return;
                                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                   if (!ok || ref.read(activeProfileProvider).valueOrNull == null) {

@@ -124,13 +124,9 @@ class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
                                 if (status != Status.Stopped) return@repeat
                             }
                         }
-                        // Activity recreate: binder may still be Stopped while VPN is up.
-                        // Prefer user-intent flag over lying "Stopped" (that causes stop+start bounce).
-                        if (status == Status.Stopped && Settings.startedByUser) {
-                            success("Starting")
-                        } else {
-                            success(status.name)
-                        }
+                        // Never invent "Starting" from startedByUser alone — that made Flutter
+                        // think VPN was already up and skip/no-op the connect button.
+                        success(status.name)
                     }
                 }
             }
