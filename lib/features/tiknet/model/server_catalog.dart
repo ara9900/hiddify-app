@@ -15,10 +15,15 @@ class TikNetClientPingResult {
   const TikNetClientPingResult({
     required this.state,
     this.pingMs,
+    this.approximate = false,
   });
 
   final TikNetClientPingState state;
   final int? pingMs;
+
+  /// Latency came from a raw TCP handshake, not a proxied request. It measures
+  /// only the hop to the server, so it reads far lower than a real urltest.
+  final bool approximate;
 
   bool get reachable => state == TikNetClientPingState.reachable;
 
@@ -26,7 +31,8 @@ class TikNetClientPingResult {
     return switch (state) {
       TikNetClientPingState.measuring => '…',
       TikNetClientPingState.noTarget => '—',
-      TikNetClientPingState.reachable when pingMs != null && pingMs! > 0 => '$pingMs ms',
+      TikNetClientPingState.reachable when pingMs != null && pingMs! > 0 =>
+        approximate ? '~$pingMs ms' : '$pingMs ms',
       TikNetClientPingState.reachable => 'در دسترس',
       TikNetClientPingState.unreachable => 'قطع',
     };

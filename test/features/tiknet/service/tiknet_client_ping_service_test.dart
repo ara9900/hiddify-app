@@ -230,4 +230,15 @@ void main() {
     expect(after['dead']?.state, TikNetClientPingState.unreachable);
     expect(after['noprobe']?.state, TikNetClientPingState.noTarget);
   });
+
+  test('approximate TCP latency is labelled with a tilde', () {
+    const exact = TikNetClientPingResult(state: TikNetClientPingState.reachable, pingMs: 132);
+    const tcp = TikNetClientPingResult(
+      state: TikNetClientPingState.reachable,
+      pingMs: 50,
+      approximate: true,
+    );
+    expect(exact.pingLabel, '132 ms');
+    expect(tcp.pingLabel, '~50 ms');
+  });
 }

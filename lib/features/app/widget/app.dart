@@ -26,6 +26,7 @@ import 'package:hiddify/features/connection/widget/connection_wrapper.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_service_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profiles_update_notifier.dart';
 import 'package:hiddify/features/shortcut/shortcut_wrapper.dart';
+import 'package:hiddify/features/tiknet/splash/tiknet_launch_splash.dart';
 import 'package:hiddify/features/system_tray/notifier/system_tray_notifier.dart';
 import 'package:hiddify/features/window/widget/window_wrapper.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
@@ -163,19 +164,35 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
   }
 }
 
-/// Hosts TikNet overlays (no long cinematic splash — that blocked startup).
-class _TikNetRootStack extends StatelessWidget {
+/// Hosts TikNet overlays plus the cold-start launch splash.
+///
+/// The splash is a pure overlay: routing and bootstrap continue underneath, so
+/// it never gates startup (the old version held the UI and felt frozen).
+class _TikNetRootStack extends StatefulWidget {
   const _TikNetRootStack({required this.routedChild});
 
   final Widget routedChild;
+
+  @override
+  State<_TikNetRootStack> createState() => _TikNetRootStackState();
+}
+
+class _TikNetRootStackState extends State<_TikNetRootStack> {
+  bool _showSplash = !tikNetLaunchSplashDone;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        routedChild,
+        widget.routedChild,
         const TikNetAppUpdateOverlay(),
+        if (_showSplash)
+          TikNetLaunchSplash(
+            onFinished: () {
+              if (mounted) setState(() => _showSplash = false);
+            },
+          ),
       ],
     );
   }

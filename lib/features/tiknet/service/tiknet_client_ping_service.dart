@@ -408,6 +408,7 @@ Future<Map<String, TikNetClientPingResult>> measureNodesTcp(
         out[node.tag] = TikNetClientPingResult(
           state: TikNetClientPingState.reachable,
           pingMs: sw.elapsedMilliseconds.clamp(1, 60000),
+          approximate: true,
         );
       } on SocketException {
         out[node.tag] = const TikNetClientPingResult(state: TikNetClientPingState.unreachable);
