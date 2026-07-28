@@ -131,7 +131,6 @@ class TikNetClientPingService {
     return TikNetServerCatalog(
       personalAvailable: catalog.personalAvailable,
       servers: servers,
-      personalPing: null,
       displayMode: catalog.displayMode,
     );
   }
