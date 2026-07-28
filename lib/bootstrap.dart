@@ -36,7 +36,13 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async {
   if (!kIsWeb) {
-    FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+    if (tikNetMode) {
+      // Do NOT preserve: holding native splash through bootstrap is what makes
+      // the big Android 12 shield icon feel "stuck" for several seconds.
+      FlutterNativeSplash.remove();
+    } else {
+      FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+    }
   }
   LoggerController.preInit();
   FlutterError.onError = Logger.logFlutterError;
@@ -159,8 +165,8 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
     ),
   );
 
-  // Remove native splash as soon as Flutter paints — no cinematic overlay delay.
-  if (!kIsWeb) {
+  // Non-TikNet: splash was preserved until Flutter is ready.
+  if (!kIsWeb && !tikNetMode) {
     FlutterNativeSplash.remove();
   }
 }
