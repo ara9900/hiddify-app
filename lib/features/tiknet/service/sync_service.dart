@@ -21,6 +21,7 @@ import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart'
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_config_merger.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_subscription_sanitizer.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_node_meta.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_ping_settings.dart';
@@ -105,14 +106,25 @@ class SyncService {
         catalogInputs.addAll(await _fetchCatalogConfigsParallel(api, baseUrl: baseUrl, token: token, servers: catalogServers));
       }
 
-      final subRaw = includeSub && subBytes.isNotEmpty ? utf8.decode(subBytes, allowMalformed: true) : null;
+      final rawSub = includeSub && subBytes.isNotEmpty ? utf8.decode(subBytes, allowMalformed: true) : null;
+      // The subscription doubles as the v2rayNG / v2box link, so it carries the
+      // plan and traffic banners as fake outbounds. Drop them before anything
+      // reaches the core, including the raw-payload fallback below.
+      final sanitized = rawSub == null ? null : sanitizeSubscriptionPayload(rawSub);
+      if (tikNetMode && sanitized != null && sanitized.changed) {
+        TikNetDiagnosticLog.i('sync', 'dropped info entries from subscription', {
+          'count': sanitized.droppedLabels.length,
+          'labels': sanitized.droppedLabels.take(6).toList(),
+        });
+      }
+      final subRaw = sanitized?.payload;
       final merged = mergeTikNetConfigs(subscriptionRaw: subRaw, catalogConfigs: catalogInputs);
       final nodeCount = merged.nodes.length;
 
       if (merged.isEmpty) {
         // Fallbacks: raw sub alone, or remote subscription URL.
-        if (includeSub && subBytes.isNotEmpty) {
-          await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(subBytes));
+        if (includeSub && subRaw != null && subRaw.trim().isNotEmpty) {
+          await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRaw)));
           await applyProfileFromCache();
         } else {
           final okRemote = await applyRemoteSubscriptionProfile();

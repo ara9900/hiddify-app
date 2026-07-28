@@ -88,15 +88,55 @@ const _xraySkipProtocols = {'freedom', 'blackhole', 'dns', 'socks', 'http', 'api
 /// Hosts that can never be dialled from the phone.
 const _unroutableHosts = {'0.0.0.0', '127.0.0.1', '::', '::1', 'localhost', '[::]', '[::1]'};
 
-/// True when an outbound can never carry traffic.
+/// Phrases that only ever appear in subscription "info" entries: the plan,
+/// traffic and expiry banners a panel ships so v2rayNG / v2box can display them
+/// in their server list. They are not proxies and must never reach the profile.
+const _infoTagPhrases = {
+  'باقی مانده',
+  'باقی‌مانده',
+  'باقیمانده',
+  'منقضی',
+  'حجم مصرف',
+  'تاریخ انقضا',
+  'روز مانده',
+  'traffic:',
+  'traffic remaining',
+  'remaining traffic',
+  'expire:',
+  'expires:',
+  'expiry',
+  'days left',
+  'used:',
+};
+
+/// True for a subscription entry that exists only to show text to the user.
 ///
-/// Hiddify panels publish informational banners ("ترافیک باقی مانده: …") as
-/// outbounds pointing at `0.0.0.0:1234`. They are display-only, but the core
-/// treats them as real proxies and routes to them, so every request that lands
-/// on one fails with "connection refused".
+/// Panels publish these as real outbounds (usually at `0.0.0.0:1234`) so other
+/// clients render them as rows in their server list. Our own UI reads plan and
+/// traffic figures from the panel API instead, so we drop them — otherwise the
+/// core dials them and every request routed there fails.
+///
+/// A panel can mark an entry explicitly with `"tiknet_info": true`, which is
+/// the only fully reliable signal; the phrase list below is the fallback for
+/// panels we do not control (Pasargard / Sanaei style banners).
+bool isPanelInfoOutbound(Map<String, dynamic> o) {
+  if (o['tiknet_info'] == true) return true;
+  return isPanelInfoLabel((o['tag'] as String?) ?? '');
+}
+
+/// True when a node name reads as an informational banner rather than a server.
+bool isPanelInfoLabel(String label) {
+  final text = label.toLowerCase();
+  if (text.isEmpty) return false;
+  return _infoTagPhrases.any(text.contains);
+}
+
+/// True when an outbound can never carry traffic, or is a display-only banner.
 bool isUnroutableOutbound(Map<String, dynamic> o) {
   final type = _outboundType(o);
   if (type.isEmpty || _skipTypes.contains(type) || _groupOutboundTypes.contains(type)) return false;
+
+  if (isPanelInfoOutbound(o)) return true;
 
   final port = (o['server_port'] as num?)?.toInt() ?? (o['port'] as num?)?.toInt();
   if (port != null && (port <= 0 || port > 65535)) return true;
