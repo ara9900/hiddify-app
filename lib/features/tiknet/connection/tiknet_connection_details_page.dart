@@ -14,10 +14,8 @@ import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart'
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
 import 'package:hiddify/utils/number_formatters.dart';
-import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Dedicated tab for live connection / traffic / IP details.
@@ -48,7 +46,6 @@ class TikNetConnectionDetailsPage extends ConsumerWidget {
       personalNodePings: nodePings,
       smartLockedTag: smartLocked,
     );
-    final profile = ref.watch(tikNetUserInfoProvider);
 
     final statusLabel = switch (connectionStatus) {
       AsyncData(value: Connected()) when smartPicking => 'انتخاب بهترین سرور…',
@@ -152,36 +149,29 @@ class TikNetConnectionDetailsPage extends ConsumerWidget {
                       children: [
                         Row(
                           children: [
-                            IPCountryFlag(countryCode: value.countryCode, size: 28),
-                            const Gap(12),
+                            IPCountryFlag(countryCode: value.countryCode, size: 40),
+                            const Gap(14),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    value.countryCode.isNotEmpty ? value.countryCode.toUpperCase() : 'نامشخص',
-                                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                                  ),
-                                  if ((value.org ?? '').isNotEmpty)
-                                    Text(
-                                      value.org!,
-                                      style: theme.textTheme.bodySmall?.copyWith(color: TikNetColors.onSurfaceVariant),
-                                    ),
-                                ],
+                              child: Text(
+                                persianCountryName(value.countryCode),
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.2,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        const Gap(14),
+                        const Gap(16),
                         const _Divider(),
-                        const Gap(10),
+                        const Gap(12),
                         Row(
                           children: [
                             const Icon(Icons.public_rounded, size: 18, color: TikNetColors.onSurfaceVariant),
                             const Gap(12),
                             Expanded(
                               child: Text(
-                                'آدرس آی‌پی',
+                                'آی‌پی خروجی',
                                 style: theme.textTheme.bodyMedium?.copyWith(color: TikNetColors.onSurfaceVariant),
                               ),
                             ),
@@ -303,41 +293,6 @@ class TikNetConnectionDetailsPage extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (profile != null) ...[
-                const Gap(16),
-                _SectionCard(
-                  title: 'اشتراک',
-                  child: Column(
-                    children: [
-                      _DetailRow(
-                        icon: Icons.person_outline_rounded,
-                        label: 'کاربر',
-                        value: profile.fullName?.isNotEmpty == true ? profile.fullName! : profile.username,
-                      ),
-                      if ((profile.planName ?? '').isNotEmpty) ...[
-                        const _Divider(),
-                        _DetailRow(icon: Icons.workspace_premium_outlined, label: 'پلن', value: profile.planName!),
-                      ],
-                      if (profile.expireDate != null) ...[
-                        const _Divider(),
-                        _DetailRow(
-                          icon: Icons.event_rounded,
-                          label: 'انقضا',
-                          value: formatShamsiDate(profile.expireDate!),
-                        ),
-                      ],
-                      if ((profile.trafficUsedBytes ?? 0) > 0 || (profile.trafficLimitBytes ?? 0) > 0) ...[
-                        const _Divider(),
-                        _DetailRow(
-                          icon: Icons.data_usage_rounded,
-                          label: 'ترافیک اشتراک',
-                          value: _formatQuota(profile.trafficUsedBytes, profile.trafficLimitBytes),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
               if (!isConnected) ...[
                 const Gap(20),
                 Text(
@@ -352,13 +307,88 @@ class TikNetConnectionDetailsPage extends ConsumerWidget {
       ),
     );
   }
+}
 
-  static String _formatQuota(int? used, int? limit) {
-    final u = used ?? 0;
-    final l = limit ?? 0;
-    if (l <= 0) return toPersianDigits(u.size());
-    return '${toPersianDigits(u.size())} / ${toPersianDigits(l.size())}';
-  }
+/// ISO country code → Persian display name.
+String persianCountryName(String? code) {
+  final c = (code ?? '').trim().toUpperCase();
+  if (c.isEmpty) return 'نامشخص';
+  return switch (c) {
+    'DE' => 'آلمان',
+    'FR' => 'فرانسه',
+    'NL' => 'هلند',
+    'US' => 'آمریکا',
+    'GB' || 'UK' => 'انگلستان',
+    'TR' => 'ترکیه',
+    'AE' => 'امارات',
+    'IR' => 'ایران',
+    'CA' => 'کانادا',
+    'FI' => 'فنلاند',
+    'SE' => 'سوئد',
+    'NO' => 'نروژ',
+    'PL' => 'لهستان',
+    'IT' => 'ایتالیا',
+    'ES' => 'اسپانیا',
+    'AT' => 'اتریش',
+    'CH' => 'سوئیس',
+    'BE' => 'بلژیک',
+    'CZ' => 'چک',
+    'RU' => 'روسیه',
+    'JP' => 'ژاپن',
+    'SG' => 'سنگاپور',
+    'HK' => 'هنگ‌کنگ',
+    'IN' => 'هند',
+    'AU' => 'استرالیا',
+    'BR' => 'برزیل',
+    'KR' => 'کره جنوبی',
+    'CN' => 'چین',
+    'UA' => 'اوکراین',
+    'RO' => 'رومانی',
+    'BG' => 'بلغارستان',
+    'PT' => 'پرتغال',
+    'IE' => 'ایرلند',
+    'DK' => 'دانمارک',
+    'LT' => 'لیتوانی',
+    'LV' => 'لتونی',
+    'EE' => 'استونی',
+    'MD' => 'مولداوی',
+    'KZ' => 'قزاقستان',
+    'AM' => 'ارمنستان',
+    'GE' => 'گرجستان',
+    'AZ' => 'آذربایجان',
+    'IQ' => 'عراق',
+    'SA' => 'عربستان',
+    'QA' => 'قطر',
+    'KW' => 'کویت',
+    'MY' => 'مالزی',
+    'TH' => 'تایلند',
+    'ID' => 'اندونزی',
+    'VN' => 'ویتنام',
+    'PH' => 'فیلیپین',
+    'NZ' => 'نیوزیلند',
+    'MX' => 'مکزیک',
+    'AR' => 'آرژانتین',
+    'CL' => 'شیلی',
+    'ZA' => 'آفریقای جنوبی',
+    'EG' => 'مصر',
+    'IL' => 'اسرائیل',
+    'CY' => 'قبرس',
+    'GR' => 'یونان',
+    'HU' => 'مجارستان',
+    'SK' => 'اسلواکی',
+    'SI' => 'اسلوونی',
+    'HR' => 'کرواسی',
+    'RS' => 'صربستان',
+    'BA' => 'بوسنی',
+    'MK' => 'مقدونیه',
+    'AL' => 'آلبانی',
+    'LU' => 'لوکزامبورگ',
+    'IS' => 'ایسلند',
+    'MT' => 'مالت',
+    'TW' => 'تایوان',
+    'MO' => 'ماکائو',
+    _ => c,
+  };
 }
 
 class _StatusHero extends StatelessWidget {

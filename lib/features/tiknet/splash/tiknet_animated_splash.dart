@@ -6,17 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 
-/// Process-level flag: true after the cold-start cinematic splash finishes (or is skipped).
+/// Process-level flag: true after the cold-start splash finishes (or is skipped).
 bool tikNetStartupSplashCompleted = false;
 
-/// True while the app-root cinematic splash is covering the UI.
+/// True while the app-root splash is covering the UI.
 bool tikNetStartupSplashVisible = false;
 
-/// Full-screen TikNet splash animation (particles + progress). Used as App overlay on every cold start.
+/// Cinematic TikNet loader — pure motion, no static splash art.
 class TikNetAnimatedSplash extends StatefulWidget {
   const TikNetAnimatedSplash({
     super.key,
-    this.duration = const Duration(milliseconds: 3200),
+    this.duration = const Duration(milliseconds: 3600),
     this.onFinished,
   });
 
@@ -28,31 +28,50 @@ class TikNetAnimatedSplash extends StatefulWidget {
 }
 
 class _TikNetAnimatedSplashState extends State<TikNetAnimatedSplash> with TickerProviderStateMixin {
-  late final AnimationController _master;
+  late final AnimationController _spin;
+  late final AnimationController _spinFast;
   late final AnimationController _pulse;
+  late final AnimationController _progress;
   late final AnimationController _exit;
-  late final Animation<double> _progress;
-  late final Animation<double> _fadeOut;
 
-  static const bg = Color(0xFF020617);
-  static const cyan = Color(0xFF38BDF8);
-  static const blue = Color(0xFF3B82F6);
+  late final Animation<double> _fadeOut;
+  late final Animation<double> _heroIn;
+  late final Animation<double> _fill;
+
+  static const _bg = Color(0xFF020617);
+  static const _cyan = Color(0xFF22D3EE);
+  static const _blue = Color(0xFF3B82F6);
+  static const _violet = Color(0xFF8B5CF6);
+  static const _mint = Color(0xFF34D399);
+
+  static const _hints = <String>[
+    'در حال آماده‌سازی هسته امن…',
+    'انتخاب بهترین مسیر…',
+    'رمزنگاری اتصال…',
+    'تقریباً آماده‌ایم…',
+  ];
 
   @override
   void initState() {
     super.initState();
     tikNetStartupSplashVisible = true;
-    _master = AnimationController(vsync: this, duration: widget.duration);
-    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))..repeat(reverse: true);
+
+    _spin = AnimationController(vsync: this, duration: const Duration(milliseconds: 9000))..repeat();
+    _spinFast = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800))..repeat();
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat(reverse: true);
+    _progress = AnimationController(vsync: this, duration: widget.duration);
     _exit = AnimationController(vsync: this, duration: const Duration(milliseconds: 480));
-    _progress = CurvedAnimation(parent: _master, curve: const Interval(0.0, 0.9, curve: Curves.easeInOutCubic));
-    _fadeOut = CurvedAnimation(parent: _exit, curve: Curves.easeInOut);
+
+    _fadeOut = CurvedAnimation(parent: _exit, curve: Curves.easeInOutCubic);
+    _heroIn = CurvedAnimation(parent: _progress, curve: const Interval(0.0, 0.28, curve: Curves.easeOutBack));
+    _fill = CurvedAnimation(parent: _progress, curve: const Interval(0.0, 0.92, curve: Curves.easeInOutCubic));
 
     _enterImmersive();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!kIsWeb) FlutterNativeSplash.remove();
     });
-    _master.forward().whenComplete(() async {
+
+    _progress.forward().whenComplete(() async {
       if (!mounted) return;
       await _exit.forward();
       if (!mounted) return;
@@ -91,14 +110,18 @@ class _TikNetAnimatedSplashState extends State<TikNetAnimatedSplash> with Ticker
 
   @override
   void dispose() {
-    _master.dispose();
+    _spin.dispose();
+    _spinFast.dispose();
     _pulse.dispose();
+    _progress.dispose();
     _exit.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final bottom = MediaQuery.paddingOf(context).bottom;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -107,79 +130,208 @@ class _TikNetAnimatedSplashState extends State<TikNetAnimatedSplash> with Ticker
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Material(
-        color: bg,
+        color: _bg,
         child: AnimatedBuilder(
-          animation: Listenable.merge([_master, _pulse, _exit]),
+          animation: Listenable.merge([_spin, _spinFast, _pulse, _progress, _exit]),
           builder: (context, _) {
-            final pulse = 0.97 + (_pulse.value * 0.03);
-            final glow = 0.35 + (_pulse.value * 0.45);
-            final progress = _progress.value;
+            final fill = _fill.value.clamp(0.0, 1.0);
+            final pct = (fill * 100).round();
             final fade = 1.0 - _fadeOut.value;
+            final pulse = _pulse.value;
+            final hintIndex = (fill * _hints.length).floor().clamp(0, _hints.length - 1);
+            final hero = _heroIn.value.clamp(0.0, 1.0);
 
             return Opacity(
               opacity: fade,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Transform.scale(
-                    scale: pulse,
-                    child: Image.asset(
-                      'assets/images/tiknet_splash.png',
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                    ),
-                  ),
-                  const DecoratedBox(
+                  // Aurora wash
+                  DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
+                      gradient: RadialGradient(
+                        center: Alignment(0, -0.15 + pulse * 0.05),
+                        radius: 1.15,
                         colors: [
-                          Color(0x88020617),
-                          Color(0x00020617),
-                          Color(0x00020617),
-                          Color(0xAA020617),
+                          Color.lerp(_blue, _violet, pulse)!.withValues(alpha: 0.28),
+                          _bg,
                         ],
-                        stops: [0.0, 0.16, 0.7, 1.0],
                       ),
                     ),
                   ),
                   CustomPaint(
-                    painter: TikNetSplashFxPainter(
-                      t: _master.value,
-                      pulse: _pulse.value,
-                      color: cyan,
+                    painter: _CosmicLoaderPainter(
+                      spin: _spin.value,
+                      spinFast: _spinFast.value,
+                      pulse: pulse,
+                      progress: fill,
+                      cyan: _cyan,
+                      blue: _blue,
+                      violet: _violet,
+                      mint: _mint,
                     ),
                   ),
-                  IgnorePointer(
-                    child: Align(
-                      alignment: const Alignment(0, -0.12),
-                      child: Container(
-                        width: 240,
-                        height: 240,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: blue.withValues(alpha: 0.22 * glow),
-                              blurRadius: 90,
-                              spreadRadius: 28,
-                            ),
-                            BoxShadow(
-                              color: cyan.withValues(alpha: 0.14 * glow),
-                              blurRadius: 44,
-                              spreadRadius: 10,
-                            ),
-                          ],
+
+                  // Hero cluster
+                  Center(
+                    child: Transform.translate(
+                      offset: Offset(0, -28 * (1 - hero)),
+                      child: Transform.scale(
+                        scale: 0.78 + hero * 0.22,
+                        child: Opacity(
+                          opacity: hero,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 210,
+                                height: 210,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    // Outer glow
+                                    Transform.scale(
+                                      scale: 0.95 + pulse * 0.08,
+                                      child: Container(
+                                        width: 160,
+                                        height: 160,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: _cyan.withValues(alpha: 0.22 + pulse * 0.18),
+                                              blurRadius: 48,
+                                              spreadRadius: 8,
+                                            ),
+                                            BoxShadow(
+                                              color: _violet.withValues(alpha: 0.12 + pulse * 0.1),
+                                              blurRadius: 72,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    // Core badge
+                                    Container(
+                                      width: 96,
+                                      height: 96,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            Color.lerp(const Color(0xFF0F172A), _blue, 0.18)!,
+                                            const Color(0xFF020617),
+                                          ],
+                                        ),
+                                        border: Border.all(
+                                          color: Color.lerp(_cyan, _mint, pulse)!.withValues(alpha: 0.7),
+                                          width: 1.6,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        Icons.shield_moon_rounded,
+                                        size: 46,
+                                        color: Color.lerp(_cyan, Colors.white, pulse * 0.35),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ShaderMask(
+                                shaderCallback: (bounds) => LinearGradient(
+                                  colors: [
+                                    Colors.white,
+                                    _cyan,
+                                    Colors.white,
+                                  ],
+                                  stops: [
+                                    0.0,
+                                    0.45 + pulse * 0.2,
+                                    1.0,
+                                  ],
+                                ).createShader(bounds),
+                                child: const Text(
+                                  'تیک‌نت',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 40,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.4,
+                                    height: 1.1,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'SECURE  ·  FAST  ·  LIMITLESS',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.45),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 2.4,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
+
+                  // Bottom progress
                   Align(
                     alignment: Alignment.bottomCenter,
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(28, 0, 28, 28 + MediaQuery.paddingOf(context).bottom),
-                      child: TikNetSplashLoadingStrip(progress: progress, accent: cyan),
+                      padding: EdgeInsets.fromLTRB(32, 0, 32, 32 + bottom),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 420),
+                            switchInCurve: Curves.easeOut,
+                            switchOutCurve: Curves.easeIn,
+                            child: Text(
+                              _hints[hintIndex],
+                              key: ValueKey(hintIndex),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.82),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          _GlowProgressBar(progress: fill, cyan: _cyan, blue: _blue, violet: _violet),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Text(
+                                'در حال بارگذاری',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.4),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '$pct٪',
+                                style: TextStyle(
+                                  color: _cyan,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  fontFeatures: const [ui.FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -192,161 +344,159 @@ class _TikNetAnimatedSplashState extends State<TikNetAnimatedSplash> with Ticker
   }
 }
 
-class TikNetSplashLoadingStrip extends StatelessWidget {
-  const TikNetSplashLoadingStrip({required this.progress, required this.accent, super.key});
+class _GlowProgressBar extends StatelessWidget {
+  const _GlowProgressBar({
+    required this.progress,
+    required this.cyan,
+    required this.blue,
+    required this.violet,
+  });
 
   final double progress;
-  final Color accent;
+  final Color cyan;
+  final Color blue;
+  final Color violet;
 
   @override
   Widget build(BuildContext context) {
-    final pct = (progress * 100).clamp(0, 100).round();
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        height: 7,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Icon(Icons.verified_rounded, size: 16, color: accent.withValues(alpha: 0.95)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'اتصال در بهترین مسیر...',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.2,
+            ColoredBox(color: Colors.white.withValues(alpha: 0.07)),
+            FractionallySizedBox(
+              widthFactor: progress.clamp(0.03, 1.0),
+              alignment: AlignmentDirectional.centerStart,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [violet, blue, cyan]),
+                  boxShadow: [
+                    BoxShadow(color: cyan.withValues(alpha: 0.55), blurRadius: 12, spreadRadius: 1),
+                  ],
                 ),
-              ),
-            ),
-            Text(
-              '$pct%',
-              style: TextStyle(
-                color: accent.withValues(alpha: 0.95),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                fontFeatures: const [ui.FontFeature.tabularFigures()],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 8,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ColoredBox(color: Colors.white.withValues(alpha: 0.08)),
-                FractionallySizedBox(
-                  widthFactor: progress.clamp(0.02, 1.0),
-                  alignment: AlignmentDirectional.centerStart,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0x8C38BDF8),
-                          Color(0xFF38BDF8),
-                          Color(0xFF60A5FA),
-                        ],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: accent.withValues(alpha: 0.65),
-                          blurRadius: 12,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                FractionallySizedBox(
-                  widthFactor: progress.clamp(0.02, 1.0),
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Align(
-                    alignment: AlignmentDirectional((progress * 2 - 1).clamp(-1.0, 1.0), 0),
-                    child: Container(
-                      width: 36,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.white.withValues(alpha: 0.0),
-                            Colors.white.withValues(alpha: 0.55),
-                            Colors.white.withValues(alpha: 0.0),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
 
-class TikNetSplashFxPainter extends CustomPainter {
-  TikNetSplashFxPainter({required this.t, required this.pulse, required this.color});
+class _CosmicLoaderPainter extends CustomPainter {
+  _CosmicLoaderPainter({
+    required this.spin,
+    required this.spinFast,
+    required this.pulse,
+    required this.progress,
+    required this.cyan,
+    required this.blue,
+    required this.violet,
+    required this.mint,
+  });
 
-  final double t;
+  final double spin;
+  final double spinFast;
   final double pulse;
-  final Color color;
+  final double progress;
+  final Color cyan;
+  final Color blue;
+  final Color violet;
+  final Color mint;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rnd = math.Random(42);
-    final paint = Paint()..style = PaintingStyle.fill;
+    final center = Offset(size.width / 2, size.height * 0.40);
+    final rnd = math.Random(11);
 
-    for (var i = 0; i < 36; i++) {
-      final seedX = rnd.nextDouble();
-      final seedY = rnd.nextDouble();
-      final speed = 0.12 + rnd.nextDouble() * 0.4;
-      final y = (seedY + t * speed) % 1.0;
-      final x = seedX + math.sin((t + seedY) * math.pi * 2) * 0.025;
-      final r = 0.7 + rnd.nextDouble() * 2.2;
-      final alpha = (0.12 + rnd.nextDouble() * 0.5) * (0.5 + pulse * 0.5);
-      paint.color = color.withValues(alpha: alpha);
-      canvas.drawCircle(Offset(x * size.width, y * size.height), r, paint);
+    // Stars
+    final star = Paint()..style = PaintingStyle.fill;
+    for (var i = 0; i < 56; i++) {
+      final seed = rnd.nextDouble();
+      final a = seed * math.pi * 2 + spin * (0.4 + seed);
+      final r = 50.0 + rnd.nextDouble() * math.min(size.width, size.height) * 0.48;
+      final twinkle = (math.sin(spinFast * math.pi * 2 + i * 0.7) + 1) / 2;
+      star.color = Colors.white.withValues(alpha: 0.05 + twinkle * 0.28);
+      canvas.drawCircle(
+        center + Offset(math.cos(a) * r, math.sin(a) * r * 0.78),
+        0.7 + rnd.nextDouble() * 1.6,
+        star,
+      );
     }
 
-    final beamX = size.width * 0.5;
-    final beamPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(beamX, 0),
-        Offset(beamX, size.height),
-        [
-          color.withValues(alpha: 0.0),
-          color.withValues(alpha: 0.12 + pulse * 0.1),
-          color.withValues(alpha: 0.0),
-        ],
-        const [0.05, 0.45, 0.95],
-      );
-    canvas.drawRect(
-      Rect.fromCenter(center: Offset(beamX, size.height * 0.42), width: 12, height: size.height * 0.72),
-      beamPaint,
+    void arc(double radius, double width, double start, double sweep, Color color, double alpha) {
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round
+        ..color = color.withValues(alpha: alpha);
+      canvas.drawArc(Rect.fromCircle(center: center, radius: radius), start, sweep, false, paint);
+    }
+
+    final base = 62.0 + pulse * 5;
+
+    // Ghost rings
+    arc(base + 6, 1.0, 0, math.pi * 2, blue, 0.10);
+    arc(base + 28, 1.0, 0, math.pi * 2, violet, 0.08);
+
+    // Orbiting arcs
+    arc(base + 18, 2.4, spin * math.pi * 2, math.pi * 1.25, cyan, 0.65);
+    arc(base + 36, 1.8, -spinFast * math.pi * 2, math.pi * 0.9, violet, 0.55);
+    arc(base + 52, 1.5, spin * math.pi * 1.7 + 1.2, math.pi * 0.7, mint, 0.42);
+
+    // Progress ring
+    arc(
+      base + 68,
+      4.2,
+      -math.pi / 2,
+      math.pi * 2 * progress.clamp(0.04, 1.0),
+      cyan,
+      0.88,
     );
 
-    final scanY = size.height * (0.14 + (t * 0.7) % 0.7);
-    final scanPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(0, scanY - 22),
-        Offset(0, scanY + 22),
+    // Orbiting diamonds
+    for (var i = 0; i < 3; i++) {
+      final ang = spinFast * math.pi * 2 + i * (math.pi * 2 / 3);
+      final orbit = base + 36.0;
+      final p = center + Offset(math.cos(ang) * orbit, math.sin(ang) * orbit);
+      final diamond = Paint()
+        ..style = PaintingStyle.fill
+        ..color = Color.lerp(cyan, mint, i / 3)!.withValues(alpha: 0.85);
+      final path = Path()
+        ..moveTo(p.dx, p.dy - 4.5)
+        ..lineTo(p.dx + 3.2, p.dy)
+        ..lineTo(p.dx, p.dy + 4.5)
+        ..lineTo(p.dx - 3.2, p.dy)
+        ..close();
+      canvas.drawPath(path, diamond);
+    }
+
+    // Sweep glow
+    final sweep = Paint()
+      ..shader = ui.Gradient.sweep(
+        center,
         [
-          color.withValues(alpha: 0.0),
-          color.withValues(alpha: 0.22),
-          color.withValues(alpha: 0.0),
+          Colors.transparent,
+          cyan.withValues(alpha: 0.0),
+          cyan.withValues(alpha: 0.18),
+          violet.withValues(alpha: 0.08),
+          Colors.transparent,
         ],
+        const [0.0, 0.5, 0.68, 0.82, 1.0],
+        TileMode.clamp,
+        spin * math.pi * 2,
+        spin * math.pi * 2 + math.pi * 2,
       );
-    canvas.drawRect(Rect.fromLTWH(0, scanY - 22, size.width, 44), scanPaint);
+    canvas.drawCircle(center, base + 74, sweep);
   }
 
   @override
-  bool shouldRepaint(covariant TikNetSplashFxPainter oldDelegate) =>
-      oldDelegate.t != t || oldDelegate.pulse != pulse || oldDelegate.color != color;
+  bool shouldRepaint(covariant _CosmicLoaderPainter oldDelegate) =>
+      oldDelegate.spin != spin ||
+      oldDelegate.spinFast != spinFast ||
+      oldDelegate.pulse != pulse ||
+      oldDelegate.progress != progress;
 }
