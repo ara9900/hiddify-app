@@ -5,14 +5,26 @@ import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_config_merger.dart';
 
-String _subConfig({required List<String> proxyTags}) {
+String _subConfig({required List<String> proxyTags, bool withUrltest = false}) {
   final outs = <Map<String, dynamic>>[
     {
       'type': 'selector',
       'tag': 'Select',
-      'outbounds': [...proxyTags, 'direct'],
-      'default': proxyTags.first,
+      'outbounds': [
+        if (withUrltest) 'auto',
+        ...proxyTags,
+        'direct',
+      ],
+      'default': withUrltest ? 'auto' : proxyTags.first,
     },
+    if (withUrltest)
+      {
+        'type': 'urltest',
+        'tag': 'auto',
+        // Intentionally subscription-only — merger must add catalog leaves.
+        'outbounds': [...proxyTags],
+        'url': 'https://www.gstatic.com/generate_204',
+      },
     for (final t in proxyTags)
       {
         'type': 'vless',
@@ -144,6 +156,50 @@ void main() {
       );
       expect(merged.nodes.length, 1);
       expect(merged.nodes.first.tag, 'ok');
+    });
+
+    test('adds catalog tags to existing urltest group for ping', () {
+      final merged = mergeTikNetConfigs(
+        subscriptionRaw: _subConfig(proxyTags: ['de-sub'], withUrltest: true),
+        catalogConfigs: [
+          TikNetCatalogConfigInput(
+            server: _server(7, 'DE Catalog'),
+            configBytes: utf8.encode(_catalogConfig(tag: 'proxy')),
+          ),
+        ],
+      );
+
+      final cat = merged.nodes.firstWhere((n) => n.isCatalog);
+      final map = jsonDecode(merged.configJson) as Map<String, dynamic>;
+      final outs = (map['outbounds'] as List).cast<Map<String, dynamic>>();
+      final auto = outs.firstWhere((o) => o['type'] == 'urltest' && o['tag'] == 'auto');
+      final listed = (auto['outbounds'] as List).map((e) => e.toString()).toList();
+      expect(listed, contains('de-sub'));
+      expect(listed, contains(cat.tag));
+    });
+
+    test('creates auto urltest with all leaf tags when missing', () {
+      final merged = mergeTikNetConfigs(
+        subscriptionRaw: _subConfig(proxyTags: ['de-sub']),
+        catalogConfigs: [
+          TikNetCatalogConfigInput(
+            server: _server(7, 'DE Catalog'),
+            configBytes: utf8.encode(_catalogConfig(tag: 'proxy')),
+          ),
+        ],
+      );
+
+      final cat = merged.nodes.firstWhere((n) => n.isCatalog);
+      final map = jsonDecode(merged.configJson) as Map<String, dynamic>;
+      final outs = (map['outbounds'] as List).cast<Map<String, dynamic>>();
+      final autos = outs.where((o) => o['type'] == 'urltest').toList();
+      expect(autos, isNotEmpty);
+      final listed = (autos.first['outbounds'] as List).map((e) => e.toString()).toList();
+      expect(listed, contains('de-sub'));
+      expect(listed, contains(cat.tag));
+      final selector = outs.firstWhere((o) => o['type'] == 'selector');
+      final selListed = (selector['outbounds'] as List).map((e) => e.toString()).toList();
+      expect(selListed, contains('auto'));
     });
   });
 

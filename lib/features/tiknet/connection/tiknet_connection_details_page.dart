@@ -16,6 +16,7 @@ import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart'
 import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
 import 'package:hiddify/utils/number_formatters.dart';
+import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Dedicated tab for live connection / traffic / IP details.

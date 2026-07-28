@@ -135,6 +135,11 @@ void main() {
     expect(urlTestDelaysSettled({'a': 120, 'b': 65000}, {'a', 'b'}), isTrue);
     // Missing tags are not settled yet.
     expect(urlTestDelaysSettled({'a': 50}, {'a', 'missing'}), isFalse);
+    // Tags outside the tested group membership are ignored.
+    expect(
+      urlTestDelaysSettled({'a': 50}, {'a', 'reality-missing'}, members: {'a'}),
+      isTrue,
+    );
   });
 
   test('delayByTagFromGroups prefers success over zero/fail', () {

@@ -120,20 +120,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
 
   if (selectorIndex >= 0) {
     final sel = Map<String, dynamic>.from(outbounds[selectorIndex]);
-    final existing = <String>[];
-    final rawList = sel['outbounds'];
-    if (rawList is List) {
-      for (final e in rawList) {
-        final t = e.toString().trim();
-        if (t.isNotEmpty) existing.add(t);
-      }
-    }
-    final merged = <String>[];
-    final seen = <String>{};
-    for (final t in [...existing, ...selectableTags]) {
-      if (seen.add(t)) merged.add(t);
-    }
-    sel['outbounds'] = merged;
+    sel['outbounds'] = _mergeOutboundTagList(sel['outbounds'], selectableTags);
     if (sel['default'] == null || sel['default'].toString().trim().isEmpty) {
       sel['default'] = selectableTags.first;
     }
@@ -160,6 +147,40 @@ TikNetMergedConfigResult mergeTikNetConfigs({
         'default': selectableTags.first,
       },
     );
+  }
+
+  // Critical for Reality/catalog ping: urltest groups (e.g. "auto") must list the
+  // same leaf tags. Merge previously only updated the selector, so urltest stayed
+  // subscription-only and Reality catalog nodes never received delays.
+  for (var i = 0; i < outbounds.length; i++) {
+    if (_typeOf(outbounds[i]) != 'urltest') continue;
+    final ut = Map<String, dynamic>.from(outbounds[i]);
+    ut['outbounds'] = _mergeOutboundTagList(ut['outbounds'], selectableTags);
+    outbounds[i] = ut;
+  }
+
+  // Ensure at least one urltest group exists for ping/smart-connect.
+  final hasUrltest = outbounds.any((o) => _typeOf(o) == 'urltest');
+  if (!hasUrltest) {
+    final selIdx = outbounds.indexWhere((o) => _typeOf(o) == 'selector');
+    final insertAt = selIdx < 0 ? 0 : (selIdx + 1).clamp(0, outbounds.length);
+    outbounds.insert(
+      insertAt,
+      {
+        'type': 'urltest',
+        'tag': 'auto',
+        'outbounds': List<String>.from(selectableTags),
+        'url': 'https://www.gstatic.com/generate_204',
+        'interval': '10m',
+        'tolerance': 50,
+      },
+    );
+    // Prefer auto inside selector when we just created it.
+    if (selIdx >= 0) {
+      final sel = Map<String, dynamic>.from(outbounds[selIdx]);
+      sel['outbounds'] = _mergeOutboundTagList(['auto'], _tagList(sel['outbounds']));
+      outbounds[selIdx] = sel;
+    }
   }
 
   if (!usedTags.contains('direct')) {
@@ -325,7 +346,31 @@ String? _resolveSelectorTag(List<Map<String, dynamic>> outbounds) {
   return (tag != null && tag.isNotEmpty) ? tag : null;
 }
 
-String _typeOf(Map<String, dynamic> o) => ((o['type'] as String?) ?? '').trim().toLowerCase();
+String _typeOf(Map<String, dynamic> o) {
+  final type = ((o['type'] as String?) ?? '').trim().toLowerCase();
+  if (type.isNotEmpty) return type;
+  // Some catalog/Xray-shaped payloads use "protocol" instead of "type".
+  return ((o['protocol'] as String?) ?? '').trim().toLowerCase();
+}
+
+List<String> _tagList(dynamic raw) {
+  if (raw is! List) return const [];
+  final out = <String>[];
+  for (final e in raw) {
+    final t = e.toString().trim();
+    if (t.isNotEmpty) out.add(t);
+  }
+  return out;
+}
+
+List<String> _mergeOutboundTagList(dynamic existingRaw, List<String> extra) {
+  final merged = <String>[];
+  final seen = <String>{};
+  for (final t in [..._tagList(existingRaw), ...extra]) {
+    if (seen.add(t)) merged.add(t);
+  }
+  return merged;
+}
 
 String _labelOf(Map<String, dynamic> o, String tag) {
   final server = (o['server'] as String?)?.trim();

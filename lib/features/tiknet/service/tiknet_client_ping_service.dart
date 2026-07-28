@@ -28,6 +28,36 @@ String urlTestGroupTagForCatalog(TikNetPersonalOutboundCatalog catalog) {
   return '';
 }
 
+/// Pick the outbound group whose items overlap [wanted] tags the most.
+/// Avoids urltesting an empty/stale "auto" that never lists catalog Reality leaves.
+String resolveUrlTestGroupTag({
+  required TikNetPersonalOutboundCatalog catalog,
+  required Iterable<OutboundGroup> groups,
+  required Set<String> wanted,
+}) {
+  String best = urlTestGroupTagForCatalog(catalog);
+  var bestScore = -1;
+  for (final group in groups) {
+    final tag = group.tag.trim();
+    if (tag.isEmpty) continue;
+    var score = 0;
+    for (final item in group.items) {
+      final t = item.tag.trim();
+      if (wanted.contains(t)) score++;
+    }
+    // Prefer dedicated urltest groups on ties.
+    final isUrltest = catalog.autoModes.any(
+      (m) => m.kind == TikNetPersonalPickKind.urltest && m.tag.trim() == tag,
+    );
+    final adjusted = score * 10 + (isUrltest ? 2 : 0) + (tag == catalog.mainGroupTag.trim() ? 1 : 0);
+    if (adjusted > bestScore) {
+      bestScore = adjusted;
+      best = tag;
+    }
+  }
+  return best.isNotEmpty ? best : urlTestGroupTagForCatalog(catalog);
+}
+
 /// Merge urlTestDelay from every group; prefer a real result over 0 / stale fail.
 Map<String, int> delayByTagFromGroups(Iterable<OutboundGroup> groups) {
   final out = <String, int>{};
@@ -55,10 +85,30 @@ Map<String, int> delayByTagFromGroups(Iterable<OutboundGroup> groups) {
   return out;
 }
 
-/// True when every [wanted] tag has a non-zero delay (success or fail sentinel).
-bool urlTestDelaysSettled(Map<String, int> delays, Set<String> wanted) {
-  if (wanted.isEmpty) return true;
-  for (final tag in wanted) {
+/// Tags that exist as items under [groupTag] (or all groups if empty).
+Set<String> tagsInGroup(Iterable<OutboundGroup> groups, String groupTag) {
+  final wantedGroup = groupTag.trim();
+  final out = <String>{};
+  for (final group in groups) {
+    if (wantedGroup.isNotEmpty && group.tag.trim() != wantedGroup) continue;
+    for (final item in group.items) {
+      final t = item.tag.trim();
+      if (t.isNotEmpty) out.add(t);
+    }
+  }
+  return out;
+}
+
+/// True when every [wanted] tag that is actually a member of the tested set has a non-zero delay.
+/// Tags never present in the group are ignored (avoids waiting forever for Reality leaves
+/// that were missing from urltest before the merger fix).
+bool urlTestDelaysSettled(Map<String, int> delays, Set<String> wanted, {Set<String>? members}) {
+  final scope = members == null || members.isEmpty ? wanted : wanted.intersection(members);
+  if (scope.isEmpty) {
+    // Nothing to wait for in this group — treat as settled so we can read snapshot.
+    return wanted.isEmpty || delays.isNotEmpty;
+  }
+  for (final tag in scope) {
     final d = delays[tag];
     if (d == null || d == 0) return false;
   }
@@ -114,7 +164,7 @@ class TikNetClientPingService {
       if (!running) return const {};
     }
 
-    final groupTag = urlTestGroupTagForCatalog(catalog);
+    var groupTag = urlTestGroupTagForCatalog(catalog);
     if (groupTag.isEmpty) return const {};
 
     final wanted = {
@@ -134,20 +184,45 @@ class TikNetClientPingService {
     final repo = _ref.read(proxyRepositoryProvider);
     final settled = Completer<Map<String, int>>();
     var latest = <String, int>{};
+    var members = <String>{};
+
+    void ingestGroups(List<OutboundGroup> groups) {
+      groupTag = resolveUrlTestGroupTag(catalog: catalog, groups: groups, wanted: wanted);
+      members = tagsInGroup(groups, groupTag);
+      if (members.isEmpty) {
+        members = tagsInGroup(groups, catalog.mainGroupTag);
+      }
+      latest = delayByTagFromGroups(groups);
+      if (!settled.isCompleted && urlTestDelaysSettled(latest, wanted, members: members)) {
+        settled.complete(Map<String, int>.from(latest));
+      }
+    }
 
     final sub = repo.watchAllProxies().listen((event) {
       final groups = event.fold<List<OutboundGroup>?>((_) => null, (g) => g);
       if (groups == null || groups.isEmpty) return;
-      latest = delayByTagFromGroups(groups);
-      if (!settled.isCompleted && urlTestDelaysSettled(latest, wanted)) {
-        settled.complete(Map<String, int>.from(latest));
-      }
+      ingestGroups(groups);
     });
 
     try {
       // Reality handshakes are slow; allow the core RPC to finish testing the group.
       try {
-        await repo.urlTest(groupTag).getOrElse((_) => unit).run().timeout(const Duration(seconds: 35));
+        final warm = await repo.watchAllProxies().first.timeout(const Duration(seconds: 5));
+        final warmGroups = warm.fold<List<OutboundGroup>?>((_) => null, (g) => g);
+        if (warmGroups != null && warmGroups.isNotEmpty) {
+          ingestGroups(warmGroups);
+        }
+        TikNetDiagnosticLog.i('ping', 'urltest group resolved', {
+          'group': groupTag,
+          'wanted': wanted.length,
+          'members': members.length,
+        });
+        await repo.urlTest(groupTag).getOrElse((_) => unit).run().timeout(const Duration(seconds: 45));
+        // Also test selector if urltest group didn't cover all leaves.
+        final main = catalog.mainGroupTag.trim();
+        if (main.isNotEmpty && main != groupTag) {
+          await repo.urlTest(main).getOrElse((_) => unit).run().timeout(const Duration(seconds: 45));
+        }
       } on TimeoutException {
         // Still try to read whatever delays the stream already has.
       } catch (_) {
@@ -155,10 +230,20 @@ class TikNetClientPingService {
       }
 
       final delays = await settled.future.timeout(
-        const Duration(seconds: 30),
+        const Duration(seconds: 35),
         onTimeout: () => Map<String, int>.from(latest),
       );
-      return _delaysFromMap(delays, nodes);
+      final result = _delaysFromMap(delays, nodes);
+      final reachable = result.values.where((r) => r.state == TikNetClientPingState.reachable).length;
+      final unreachable = result.values.where((r) => r.state == TikNetClientPingState.unreachable).length;
+      final missing = result.values.where((r) => r.state == TikNetClientPingState.noTarget).length;
+      TikNetDiagnosticLog.i('ping', 'urltest done', {
+        'group': groupTag,
+        'reachable': reachable,
+        'unreachable': unreachable,
+        'missing': missing,
+      });
+      return result;
     } finally {
       await sub.cancel();
     }
