@@ -127,6 +127,24 @@ void main() {
     expect(sorted.map((n) => n.tag).toList(), ['fast', 'slow', 'dead']);
   });
 
+  test('sortNodesByPing ranks TCP estimates below real measurements', () {
+    const nodes = [
+      TikNetPersonalProxyNode(tag: 'estimated', groupTag: 'select', label: 'estimated'),
+      TikNetPersonalProxyNode(tag: 'measured', groupTag: 'select', label: 'measured'),
+    ];
+    final pings = {
+      // Only the hop to the server — always looks fastest, often does not work.
+      'estimated': const TikNetClientPingResult(
+        state: TikNetClientPingState.reachable,
+        pingMs: 50,
+        approximate: true,
+      ),
+      'measured': const TikNetClientPingResult(state: TikNetClientPingState.reachable, pingMs: 260),
+    };
+    final sorted = sortNodesByPing(nodes, pings);
+    expect(sorted.map((n) => n.tag).toList(), ['measured', 'estimated']);
+  });
+
   test('urlTestDelaysSettled requires non-zero delays for all wanted tags', () {
     expect(urlTestDelaysSettled({}, {'a'}), isFalse);
     expect(urlTestDelaysSettled({'a': 0}, {'a'}), isFalse);

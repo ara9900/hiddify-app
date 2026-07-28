@@ -98,86 +98,95 @@ class _TikNetLaunchSplashState extends State<TikNetLaunchSplash> with TickerProv
           opacity: 1 - _fade.value,
           child: Transform.scale(
             scale: _zoom.value,
-            child: DecoratedBox(
-              decoration: const BoxDecoration(color: _deep),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CustomPaint(
-                    painter: _AuroraPainter(t: _loop.value),
-                  ),
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Transform.scale(
-                          scale: 0.7 + 0.3 * _markIn.value,
-                          child: Opacity(
-                            opacity: _markIn.value.clamp(0, 1),
-                            child: SizedBox(
-                              width: 168,
-                              height: 168,
-                              child: CustomPaint(
-                                painter: _MarkPainter(t: _loop.value, pulse: _fill.value),
+            // The splash sits above the router, outside any Material ancestor,
+            // where Flutter paints its debug double-underline on every Text.
+            child: DefaultTextStyle(
+              style: const TextStyle(
+                decoration: TextDecoration.none,
+                fontWeight: FontWeight.w400,
+                color: Color(0xFFE2E8F0),
+              ),
+              child: DecoratedBox(
+                decoration: const BoxDecoration(color: _deep),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CustomPaint(
+                      painter: _AuroraPainter(t: _loop.value),
+                    ),
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Transform.scale(
+                            scale: 0.7 + 0.3 * _markIn.value,
+                            child: Opacity(
+                              opacity: _markIn.value.clamp(0, 1),
+                              child: SizedBox(
+                                width: 168,
+                                height: 168,
+                                child: CustomPaint(
+                                  painter: _MarkPainter(t: _loop.value, pulse: _fill.value),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 30),
-                        Opacity(
-                          opacity: _wordIn.value.clamp(0, 1),
-                          child: Transform.translate(
-                            offset: Offset(0, 14 * (1 - _wordIn.value)),
-                            child: _Wordmark(shimmer: _loop.value),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Opacity(
-                          opacity: (_wordIn.value * 0.75).clamp(0, 1),
-                          child: const Text(
-                            'اتصال امن، بدون دردسر',
-                            style: TextStyle(
-                              color: Color(0xFF94A3B8),
-                              fontSize: 13,
-                              letterSpacing: 0.2,
+                          const SizedBox(height: 30),
+                          Opacity(
+                            opacity: _wordIn.value.clamp(0, 1),
+                            child: Transform.translate(
+                              offset: Offset(0, 14 * (1 - _wordIn.value)),
+                              child: _Wordmark(shimmer: _loop.value),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 64,
-                    child: Column(
-                      children: [
-                        _ProgressBar(value: _fill.value, shimmer: _loop.value),
-                        const SizedBox(height: 14),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              toPersianDigits('$percent٪'),
-                              style: const TextStyle(
-                                color: Color(0xFFE2E8F0),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
+                          const SizedBox(height: 10),
+                          Opacity(
+                            opacity: (_wordIn.value * 0.75).clamp(0, 1),
+                            child: const Text(
+                              'اتصال امن، بدون دردسر',
+                              style: TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 13,
+                                letterSpacing: 0.2,
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Container(width: 4, height: 4, decoration: const BoxDecoration(color: Color(0xFF475569), shape: BoxShape.circle)),
-                            const SizedBox(width: 10),
-                            Text(
-                              _hint,
-                              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 64,
+                      child: Column(
+                        children: [
+                          _ProgressBar(value: _fill.value, shimmer: _loop.value),
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                toPersianDigits('$percent٪'),
+                                style: const TextStyle(
+                                  color: Color(0xFFE2E8F0),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(width: 4, height: 4, decoration: const BoxDecoration(color: Color(0xFF475569), shape: BoxShape.circle)),
+                              const SizedBox(width: 10),
+                              Text(
+                                _hint,
+                                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

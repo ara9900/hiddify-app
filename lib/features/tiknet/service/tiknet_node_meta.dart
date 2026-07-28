@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_core_tags.dart';
 
 String encodeTikNetNodeMeta(List<TikNetPersonalProxyNode> nodes) {
   final list = nodes
@@ -32,7 +33,7 @@ Map<String, TikNetPersonalProxyNode> decodeTikNetNodeMeta(String raw) {
       final source = sourceName == 'catalog' ? TikNetNodeSource.catalog : TikNetNodeSource.subscription;
       map[tag] = TikNetPersonalProxyNode(
         tag: tag,
-        groupTag: (m['group'] as String?)?.trim() ?? 'Select',
+        groupTag: (m['group'] as String?)?.trim() ?? kCoreSelectorTag,
         label: (m['label'] as String?)?.trim().isNotEmpty == true ? (m['label'] as String).trim() : tag,
         source: source,
         catalogId: (m['catalog_id'] as num?)?.toInt(),

@@ -201,6 +201,80 @@ void main() {
       final selListed = (selector['outbounds'] as List).map((e) => e.toString()).toList();
       expect(selListed, contains('auto'));
     });
+
+    test('drops panel banner outbounds and their group references', () {
+      final raw = jsonEncode({
+        'outbounds': [
+          {
+            'type': 'selector',
+            'tag': 'Select',
+            'outbounds': ['banner', 'de-sub', 'direct'],
+          },
+          {
+            'type': 'urltest',
+            'tag': 'auto',
+            'outbounds': ['banner', 'de-sub'],
+          },
+          // Panel info banner: display-only, but a dialable outbound to the core.
+          {
+            'type': 'vless',
+            'tag': 'banner',
+            'server': '0.0.0.0',
+            'server_port': 1234,
+            'uuid': '00000000-0000-0000-0000-000000000003',
+          },
+          {
+            'type': 'vless',
+            'tag': 'de-sub',
+            'server': 'sub.example.com',
+            'server_port': 443,
+            'uuid': '00000000-0000-0000-0000-000000000001',
+          },
+          {'type': 'direct', 'tag': 'direct'},
+        ],
+        'route': {'final': 'Select'},
+      });
+
+      final merged = mergeTikNetConfigs(subscriptionRaw: raw);
+
+      expect(merged.nodes.map((n) => n.tag), isNot(contains('banner')));
+      expect(merged.nodes.map((n) => n.tag), contains('de-sub'));
+
+      final map = jsonDecode(merged.configJson) as Map<String, dynamic>;
+      final outs = (map['outbounds'] as List).cast<Map<String, dynamic>>();
+      expect(outs.any((o) => o['tag'] == 'banner'), isFalse);
+      for (final o in outs) {
+        final refs = o['outbounds'];
+        if (refs is List) {
+          expect(refs.map((e) => e.toString()), isNot(contains('banner')));
+        }
+      }
+    });
+  });
+
+  group('isUnroutableOutbound', () {
+    test('flags placeholder servers and bad ports', () {
+      expect(isUnroutableOutbound({'type': 'vless', 'server': '0.0.0.0', 'server_port': 1234}), isTrue);
+      expect(isUnroutableOutbound({'type': 'vless', 'server': '127.0.0.1', 'server_port': 8080}), isTrue);
+      expect(isUnroutableOutbound({'type': 'vless', 'server': 'ok.example.com', 'server_port': 0}), isTrue);
+      expect(isUnroutableOutbound({'type': 'vless'}), isTrue);
+    });
+
+    test('keeps real proxies and never touches group or utility outbounds', () {
+      expect(isUnroutableOutbound({'type': 'vless', 'server': 'ok.example.com', 'server_port': 443}), isFalse);
+      expect(isUnroutableOutbound({'type': 'direct', 'tag': 'direct'}), isFalse);
+      expect(isUnroutableOutbound({'type': 'selector', 'tag': 'Select'}), isFalse);
+      // WireGuard style: no top-level server, peers carry the endpoints.
+      expect(
+        isUnroutableOutbound({
+          'type': 'wireguard',
+          'peers': [
+            {'server': 'wg.example.com', 'server_port': 51820},
+          ],
+        }),
+        isFalse,
+      );
+    });
   });
 
   group('resolveCatalogSelectionToNode', () {

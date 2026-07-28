@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_core_tags.dart';
 import 'package:hiddify/utils/link_parsers.dart';
 
 const _groupTypes = {'selector', 'urltest', 'balancer'};
@@ -52,12 +53,21 @@ TikNetMergedConfigResult mergeTikNetConfigs({
   final usedTags = <String>{};
   final nodes = <TikNetPersonalProxyNode>[];
 
-  String mainGroup = 'Select';
+  String mainGroup = kCoreSelectorTag;
+  final droppedTags = <String>{};
 
   if (base != null) {
-    final baseOuts = _outboundsList(base);
-    for (final o in baseOuts) {
+    final baseOuts = <Map<String, dynamic>>[];
+    for (final o in _outboundsList(base)) {
       final tag = (o['tag'] as String?)?.trim() ?? '';
+      if (isUnroutableOutbound(o)) {
+        // Panel banner entries ("ترافیک باقی مانده" and friends) are shipped as
+        // real outbounds pointing at 0.0.0.0. The core happily dials them and
+        // every request routed there fails, so they must not reach the profile.
+        if (tag.isNotEmpty) droppedTags.add(tag);
+        continue;
+      }
+      baseOuts.add(o);
       if (tag.isNotEmpty) usedTags.add(tag);
       outbounds.add(Map<String, dynamic>.from(o));
     }
@@ -74,6 +84,15 @@ TikNetMergedConfigResult mergeTikNetConfigs({
           label: _labelOf(o, tag),
         ),
       );
+    }
+  }
+
+  if (droppedTags.isNotEmpty) {
+    for (var i = 0; i < outbounds.length; i++) {
+      final refs = outbounds[i]['outbounds'];
+      if (refs is! List) continue;
+      final kept = _tagList(refs).where((t) => !droppedTags.contains(t)).toList();
+      outbounds[i] = Map<String, dynamic>.from(outbounds[i])..['outbounds'] = kept;
     }
   }
 
@@ -105,7 +124,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
   }
 
   if (nodes.isEmpty) {
-    return const TikNetMergedConfigResult(configJson: '', mainGroupTag: 'Select', nodes: []);
+    return const TikNetMergedConfigResult(configJson: '', mainGroupTag: kCoreSelectorTag, nodes: []);
   }
 
   // Ensure selector exists and lists all selectable nodes.
@@ -275,6 +294,7 @@ List<_ExtractedOutbound> _extractCatalogOutbounds(
     if (oldTag.isEmpty || _groupTypes.contains(type) || type == 'direct' || type == 'block' || type == 'dns' || type == 'tun') {
       continue;
     }
+    if (isUnroutableOutbound(o)) continue;
     final neu = rename[oldTag]!;
     final copy = _deepCopyMap(o);
     _rewriteTagsInOutbound(copy, rename);

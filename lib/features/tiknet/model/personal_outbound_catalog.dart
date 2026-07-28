@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:hiddify/features/tiknet/model/tiknet_core_tags.dart';
 import 'package:hiddify/utils/link_parsers.dart';
 
 /// How the panel wants the server picker to behave.
@@ -83,6 +84,33 @@ class TikNetPersonalOutboundCatalog {
 
 const _skipTypes = {'direct', 'block', 'dns', 'tun', 'interface', 'freedom', 'blackhole'};
 const _xraySkipProtocols = {'freedom', 'blackhole', 'dns', 'socks', 'http', 'api'};
+
+/// Hosts that can never be dialled from the phone.
+const _unroutableHosts = {'0.0.0.0', '127.0.0.1', '::', '::1', 'localhost', '[::]', '[::1]'};
+
+/// True when an outbound can never carry traffic.
+///
+/// Hiddify panels publish informational banners ("ترافیک باقی مانده: …") as
+/// outbounds pointing at `0.0.0.0:1234`. They are display-only, but the core
+/// treats them as real proxies and routes to them, so every request that lands
+/// on one fails with "connection refused".
+bool isUnroutableOutbound(Map<String, dynamic> o) {
+  final type = _outboundType(o);
+  if (type.isEmpty || _skipTypes.contains(type) || _groupOutboundTypes.contains(type)) return false;
+
+  final port = (o['server_port'] as num?)?.toInt() ?? (o['port'] as num?)?.toInt();
+  if (port != null && (port <= 0 || port > 65535)) return true;
+
+  // Covers sing-box `server` as well as Xray `settings.vnext[].address`.
+  final target = parseProbeTarget(_probeUrlFromOutbound(o));
+  if (target == null) {
+    // No dialable host anywhere; only peer / detour based outbounds still work.
+    return o['peers'] is! List && o['detour'] is! String;
+  }
+  return _unroutableHosts.contains(target.host.toLowerCase());
+}
+
+const _groupOutboundTypes = {'selector', 'urltest', 'balancer'};
 
 const _proxyUriSchemes = {
   'vless',
@@ -204,7 +232,7 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromSubscriptionLinks(Strin
     nodes.add(
       TikNetPersonalProxyNode(
         tag: tag,
-        groupTag: 'proxy',
+        groupTag: kCoreSelectorTag,
         label: label,
         probeUrl: _probeUrlFromProxyUri(uri),
       ),
@@ -214,7 +242,7 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromSubscriptionLinks(Strin
 
   if (nodes.isEmpty) return null;
   return TikNetPersonalOutboundCatalog(
-    mainGroupTag: 'proxy',
+    mainGroupTag: kCoreSelectorTag,
     autoModes: const [],
     nodes: nodes,
   );
@@ -313,6 +341,7 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
       if (_skipTypes.contains(type) || type == 'selector' || type == 'urltest' || type == 'balancer') {
         continue;
       }
+      if (isUnroutableOutbound(o)) continue;
       nodes.add(
         TikNetPersonalProxyNode(
           tag: tag,
@@ -401,14 +430,14 @@ TikNetPersonalOutboundCatalog? _catalogFromClashProxies(
     nodes.add(
       TikNetPersonalProxyNode(
         tag: tag,
-        groupTag: 'proxy',
+        groupTag: kCoreSelectorTag,
         label: name?.isNotEmpty == true ? name! : tag,
         probeUrl: _probeUrlFromOutbound(map),
       ),
     );
   }
   if (nodes.isEmpty) return null;
-  var mainGroup = 'proxy';
+  var mainGroup = kCoreSelectorTag;
   final groups = config['proxy-groups'] ?? config['proxy_groups'];
   if (groups is List) {
     for (final g in groups) {
@@ -454,7 +483,7 @@ String _resolveMainSelectorTag(Map<String, dynamic> config, List<Map<String, dyn
   }
   final tag = (best?['tag'] as String?)?.trim();
   if (tag != null && tag.isNotEmpty) return tag;
-  return 'proxy';
+  return kCoreSelectorTag;
 }
 
 String _nodeLabel(Map<String, dynamic> o, String tag) {
@@ -493,7 +522,7 @@ TikNetPersonalOutboundCatalog? _catalogFromXrayConfigBundle(List<dynamic> items)
       nodes.add(
         TikNetPersonalProxyNode(
           tag: tag,
-          groupTag: 'proxy',
+          groupTag: kCoreSelectorTag,
           label: label,
           probeUrl: _probeUrlFromOutbound(o),
         ),
@@ -504,7 +533,7 @@ TikNetPersonalOutboundCatalog? _catalogFromXrayConfigBundle(List<dynamic> items)
 
   if (nodes.isEmpty) return null;
   return TikNetPersonalOutboundCatalog(
-    mainGroupTag: 'proxy',
+    mainGroupTag: kCoreSelectorTag,
     autoModes: const [],
     nodes: nodes,
   );

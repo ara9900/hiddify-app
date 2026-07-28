@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:path/path.dart' as p;
 class TikNetDiagnosticLog {
   TikNetDiagnosticLog._();
 
+  static const _logcatTag = 'TikNetDiag';
   static const _maxLines = 1000;
   static final _buffer = <String>[];
   static File? _file;
@@ -41,6 +43,9 @@ class TikNetDiagnosticLog {
     if (_buffer.length > _maxLines) {
       _buffer.removeRange(0, _buffer.length - _maxLines);
     }
+    // Release builds are not debuggable, so `run-as` cannot reach the log file.
+    // Mirroring to the platform log keeps the app diagnosable from `adb logcat`.
+    developer.log(line, name: _logcatTag, level: level == 'E' ? 1000 : 800);
     final file = _file;
     if (file != null) {
       unawaited(

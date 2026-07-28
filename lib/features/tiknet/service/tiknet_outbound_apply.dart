@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -8,6 +7,7 @@ import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_core_selection.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -48,18 +48,24 @@ Future<void> applyTikNetPersonalOutboundSelection(WidgetRef ref) async {
     return;
   }
 
-  var groupTag = (selection.personalGroupTag ?? '').trim();
+  final groupTag = (selection.personalGroupTag ?? '').trim();
   final outboundTag = (selection.personalTag ?? '').trim();
-  if (groupTag.isEmpty) groupTag = 'Select';
   if (outboundTag.isEmpty) return;
 
   // Manual pick: clear any smart session lock.
   await clearTikNetSmartLockWidget(ref);
 
-  await ref
-      .read(proxyRepositoryProvider)
-      .selectProxy(groupTag, outboundTag)
-      .getOrElse((_) => unit)
-      .run()
-      .timeout(const Duration(seconds: 8), onTimeout: () => unit);
+  final applied = await selectOutboundInCore(
+    ref.read(proxyRepositoryProvider),
+    outboundTag: outboundTag,
+    preferredGroupTag: groupTag,
+    reason: 'manual-pick',
+  );
+  if (!applied) {
+    // Better the lowest-delay group than the core's round-robin default.
+    await ensureSafeDefaultOutbound(
+      ref.read(proxyRepositoryProvider),
+      reason: 'manual-pick-rejected',
+    );
+  }
 }

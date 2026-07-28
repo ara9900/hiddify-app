@@ -57,13 +57,19 @@ abstract class ConfigOptions {
     mapTo: (value) => value.key,
   );
 
+  /// TikNet: UDP, not TCP. Remote DNS runs through the proxy, and a TCP resolver
+  /// pays a fresh handshake per query — on the device that produced 10–13s
+  /// "cache wait timeout" stalls on first page loads.
+  static const tikNetDefaultRemoteDns = "udp://1.1.1.1";
+
   static final remoteDnsAddress = PreferencesNotifier.create<String, String>(
     "remote-dns-address",
-    "tcp://8.8.8.8",
+    tikNetMode ? tikNetDefaultRemoteDns : "tcp://8.8.8.8",
     possibleValues: List.of([
       "local",
+      "udp://1.1.1.1",
+      "udp://8.8.8.8",
       // "udp://223.5.5.5",
-      // "udp://1.1.1.1",
       // "udp://1.1.1.2",
       "tcp://8.8.8.8",
       "tcp://1.1.1.1",
@@ -161,9 +167,12 @@ abstract class ConfigOptions {
     validator: (value) => value.isNotBlank && isUrl(value),
   );
 
+  /// TikNet: this drives `experimental.monitoring.interval`, and both generated
+  /// balancers set `interrupt_exist_connections`, so every cycle tears down
+  /// in-flight downloads. 10 minutes was frequent enough to be noticeable.
   static final urlTestInterval = PreferencesNotifier.create<Duration, int>(
     "url-test-interval",
-    const Duration(minutes: 10),
+    Duration(minutes: tikNetMode ? 30 : 10),
     mapFrom: const IntervalInSecondsConverter().fromJson,
     mapTo: const IntervalInSecondsConverter().toJson,
   );

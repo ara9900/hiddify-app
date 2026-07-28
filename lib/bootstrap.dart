@@ -103,6 +103,21 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
       await container.read(ConfigOptions.useXrayCoreWhenPossible.notifier).update(true);
       await prefs.setBool('tiknet_reality_defaults_v1', true);
     });
+    // Move existing installs off TCP remote DNS and the 10-minute urltest cycle;
+    // both measurably hurt throughput (see ConfigOptions for the reasoning).
+    await _init("tiknet network defaults", () async {
+      final prefs = container.read(sharedPreferencesProvider).requireValue;
+      if (prefs.getBool('tiknet_network_defaults_v1') == true) return;
+      if (container.read(ConfigOptions.remoteDnsAddress).startsWith('tcp://')) {
+        await container
+            .read(ConfigOptions.remoteDnsAddress.notifier)
+            .update(ConfigOptions.tikNetDefaultRemoteDns);
+      }
+      if (container.read(ConfigOptions.urlTestInterval) < const Duration(minutes: 30)) {
+        await container.read(ConfigOptions.urlTestInterval.notifier).update(const Duration(minutes: 30));
+      }
+      await prefs.setBool('tiknet_network_defaults_v1', true);
+    });
     // Migrate stored Apple captive urltest URL → gstatic (panel ping_test_url can still override later).
     await _init("tiknet connection test url", () async {
       final current = container.read(ConfigOptions.connectionTestUrl);
@@ -139,7 +154,9 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
   await _init("translations", () => container.read(translationsProvider.future));
 
   await _safeInit("active profile", () => container.read(activeProfileProvider.future), timeout: 1000);
-  await _init("hiddify-core", () => container.read(hiddifyCoreServiceProvider).init());
+  // A core setup failure (e.g. its port is still held by a previous session)
+  // must not abort bootstrap before runApp and leave a blank screen.
+  await _safeInit("hiddify-core", () => container.read(hiddifyCoreServiceProvider).init());
 
   if (!kIsWeb) {
     if (PlatformUtils.isDesktop) {

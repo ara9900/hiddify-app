@@ -371,6 +371,11 @@ List<TikNetPersonalProxyNode> sortNodesByPing(
     final ra = rank(pa);
     final rb = rank(pb);
     if (ra != rb) return ra.compareTo(rb);
+    // A raw-TCP estimate measures only the hop to the server, so it reads far
+    // lower than a real proxied RTT. Never let one outrank a real measurement.
+    final aa = pa?.approximate == true ? 1 : 0;
+    final ab = pb?.approximate == true ? 1 : 0;
+    if (aa != ab) return aa.compareTo(ab);
     final ma = pa?.pingMs ?? 1 << 30;
     final mb = pb?.pingMs ?? 1 << 30;
     final byMs = ma.compareTo(mb);

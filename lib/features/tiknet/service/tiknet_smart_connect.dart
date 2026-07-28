@@ -1,13 +1,14 @@
 import 'dart:async';
 
-import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
+import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_core_selection.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -32,12 +33,20 @@ Future<void> applyTikNetSmartConnect(WidgetRef ref) async {
   final lockedTag = ref.read(Preferences.tikNetSmartLockedTag).trim();
   final lockedGroup = ref.read(Preferences.tikNetSmartLockedGroup).trim();
   if (lockedTag.isNotEmpty) {
-    await _selectOutbound(ref, groupTag: lockedGroup.isEmpty ? 'Select' : lockedGroup, outboundTag: lockedTag);
+    await _selectOutbound(ref, groupTag: lockedGroup, outboundTag: lockedTag, reason: 'smart-locked');
     return;
   }
 
   ref.read(tikNetSmartPickingProvider.notifier).state = true;
   try {
+    // Measuring takes ~20s. Until it finishes the core routes through its own
+    // `balance` default, which round-robins over dead outbounds, so park traffic
+    // on the lowest-delay group first.
+    await ensureSafeDefaultOutbound(
+      ref.read(proxyRepositoryProvider),
+      reason: 'smart-measuring',
+    );
+
     final nodesState = await ref.read(personalOutboundProvider.future).timeout(
       const Duration(seconds: 20),
       onTimeout: () => const TikNetPersonalNodesState(catalog: null, nodePings: {}),
@@ -59,37 +68,30 @@ Future<void> applyTikNetSmartConnect(WidgetRef ref) async {
         .measureNodePingsFromCore(catalog)
         .timeout(const Duration(seconds: 14), onTimeout: () => const {});
 
-    String? bestTag;
-    String bestGroup = catalog.mainGroupTag.trim().isEmpty ? 'Select' : catalog.mainGroupTag.trim();
-    var bestMs = 1 << 30;
-
-    for (final node in catalog.nodes) {
-      final ping = pings[node.tag];
-      final ms = ping?.pingMs;
-      if (ping == null || !ping.reachable || ms == null || ms <= 0 || ms >= 65000) continue;
-      if (ms < bestMs) {
-        bestMs = ms;
-        bestTag = node.tag;
-        bestGroup = node.groupTag.trim().isEmpty ? bestGroup : node.groupTag.trim();
-      }
+    final best = pickBestNodeByPing(catalog.nodes, pings);
+    if (best == null) {
+      // Nothing measured at all — leave the lowest-delay group installed above
+      // rather than locking onto an arbitrary node that may be one of the dead ones.
+      TikNetDiagnosticLog.w('smart', 'no measurable node; staying on lowest-delay group', {
+        'nodes': catalog.nodes.length,
+      });
+      return;
     }
 
-    if (bestTag == null || bestTag.isEmpty) {
-      // Fallback: first node (still sticky for this session).
-      final first = catalog.nodes.first;
-      bestTag = first.tag;
-      bestGroup = first.groupTag.trim().isEmpty ? bestGroup : first.groupTag.trim();
-      TikNetDiagnosticLog.w('smart', 'no reachable ping; fallback first node', {'tag': bestTag});
-    } else {
-      TikNetDiagnosticLog.i('smart', 'picked lowest ping', {'tag': bestTag, 'ms': bestMs});
-    }
+    TikNetDiagnosticLog.i('smart', 'picked lowest ping', {
+      'tag': best.tag,
+      'ms': best.pingMs,
+      'approximate': best.approximate,
+    });
 
-    final chosen = bestTag;
-    if (chosen == null || chosen.isEmpty) return;
-
-    await ref.read(Preferences.tikNetSmartLockedTag.notifier).update(chosen);
-    await ref.read(Preferences.tikNetSmartLockedGroup.notifier).update(bestGroup);
-    await _selectOutbound(ref, groupTag: bestGroup, outboundTag: chosen);
+    await ref.read(Preferences.tikNetSmartLockedTag.notifier).update(best.tag);
+    await ref.read(Preferences.tikNetSmartLockedGroup.notifier).update(best.groupTag);
+    await _selectOutbound(
+      ref,
+      groupTag: best.groupTag,
+      outboundTag: best.tag,
+      reason: 'smart-pick',
+    );
   } catch (e) {
     TikNetDiagnosticLog.w('smart', 'smart connect failed', {'error': e.toString()});
   } finally {
@@ -97,18 +99,52 @@ Future<void> applyTikNetSmartConnect(WidgetRef ref) async {
   }
 }
 
+/// Winning node of a smart pick.
+typedef TikNetSmartPick = ({String tag, String groupTag, int pingMs, bool approximate});
+
+/// Lowest-latency node, preferring real proxied measurements.
+///
+/// A raw-TCP estimate only measures the hop to the server: a node whose REALITY
+/// handshake always fails still reports ~50 ms that way, which used to make it
+/// win every time. Approximate results are therefore only considered when no
+/// node has a real measurement.
+TikNetSmartPick? pickBestNodeByPing(
+  List<TikNetPersonalProxyNode> nodes,
+  Map<String, TikNetClientPingResult> pings,
+) {
+  TikNetSmartPick? best;
+  TikNetSmartPick? bestApproximate;
+
+  for (final node in nodes) {
+    final ping = pings[node.tag];
+    final ms = ping?.pingMs;
+    if (ping == null || !ping.reachable || ms == null || ms <= 0 || ms >= 65000) continue;
+    final candidate = (
+      tag: node.tag,
+      groupTag: node.groupTag.trim(),
+      pingMs: ms,
+      approximate: ping.approximate,
+    );
+    if (ping.approximate) {
+      if (bestApproximate == null || ms < bestApproximate.pingMs) bestApproximate = candidate;
+    } else {
+      if (best == null || ms < best.pingMs) best = candidate;
+    }
+  }
+
+  return best ?? bestApproximate;
+}
+
 Future<void> _selectOutbound(
   WidgetRef ref, {
   required String groupTag,
   required String outboundTag,
+  required String reason,
 }) async {
-  final group = groupTag.trim().isEmpty ? 'Select' : groupTag.trim();
-  final tag = outboundTag.trim();
-  if (tag.isEmpty) return;
-  await ref
-      .read(proxyRepositoryProvider)
-      .selectProxy(group, tag)
-      .getOrElse((_) => unit)
-      .run()
-      .timeout(const Duration(seconds: 8), onTimeout: () => unit);
+  await selectOutboundInCore(
+    ref.read(proxyRepositoryProvider),
+    outboundTag: outboundTag,
+    preferredGroupTag: groupTag,
+    reason: reason,
+  );
 }

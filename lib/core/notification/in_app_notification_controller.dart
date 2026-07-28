@@ -14,24 +14,32 @@ InAppNotificationController inAppNotificationController(Ref ref) {
 enum NotificationType { info, error, success }
 
 class InAppNotificationController with AppLogger {
-  ToastificationItem _show(
+  ToastificationItem? _show(
     String message, {
     NotificationType type = NotificationType.info,
     Duration duration = const Duration(seconds: 3),
   }) {
-    toastification.dismissAll();
-    return toastification.show(
-      title: Text(message),
-      type: type._toastificationType,
-      alignment: AlignmentDirectional.bottomStart,
-      autoCloseDuration: duration,
-      style: ToastificationStyle.fillColored,
-      pauseOnHover: true,
-      showProgressBar: false,
-      dragToClose: true,
-      closeOnClick: true,
-      closeButtonShowType: CloseButtonShowType.onHover,
-    );
+    // Notifications raised during bootstrap (before runApp) have no overlay to
+    // attach to, and toastification throws when it cannot find one. Swallow
+    // that so a notification can never abort startup or crash the app.
+    try {
+      toastification.dismissAll();
+      return toastification.show(
+        title: Text(message),
+        type: type._toastificationType,
+        alignment: AlignmentDirectional.bottomStart,
+        autoCloseDuration: duration,
+        style: ToastificationStyle.fillColored,
+        pauseOnHover: true,
+        showProgressBar: false,
+        dragToClose: true,
+        closeOnClick: true,
+        closeButtonShowType: CloseButtonShowType.onHover,
+      );
+    } catch (e, stackTrace) {
+      loggy.warning("failed to show notification, overlay may not be ready", e, stackTrace);
+      return null;
+    }
   }
 
   ToastificationItem? showErrorToast(String message) =>
