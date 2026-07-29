@@ -303,6 +303,12 @@ Map<String, TikNetClientPingResult> delaysToPingResults(
 /// - TCP OK → show as reachable (port open; dial often works even when urltest fails)
 /// - no probe URL → "—" (noTarget), never false قطع
 /// - TCP fail → keep قطع
+///
+/// The TCP estimate is only trustworthy when the whole group failed, which means
+/// the tunnel or the network was down rather than the node. A node that fails
+/// while its neighbours answer is genuinely broken — a stale REALITY short id,
+/// for instance, still accepts the TCP connection and would otherwise be shown
+/// as the fastest server in the list.
 Future<Map<String, TikNetClientPingResult>> enrichUrlTestFailsWithTcp(
   Map<String, TikNetClientPingResult> results,
   List<TikNetPersonalProxyNode> nodes, {
@@ -314,6 +320,11 @@ Future<Map<String, TikNetClientPingResult>> enrichUrlTestFailsWithTcp(
     int concurrency,
   })? tcpMeasure,
 }) async {
+  final anyProxiedSuccess = nodes.any((node) {
+    final r = results[node.tag];
+    return r != null && r.state == TikNetClientPingState.reachable && !r.approximate;
+  });
+
   final need = <TikNetPersonalProxyNode>[];
   for (final node in nodes) {
     if (results[node.tag]?.state == TikNetClientPingState.unreachable) {
@@ -321,6 +332,13 @@ Future<Map<String, TikNetClientPingResult>> enrichUrlTestFailsWithTcp(
     }
   }
   if (need.isEmpty) return results;
+  if (anyProxiedSuccess) {
+    TikNetDiagnosticLog.i('ping', 'kept urltest failures as unreachable', {
+      'failed': need.length,
+      'reason': 'group has working nodes — TCP estimate would be misleading',
+    });
+    return results;
+  }
 
   final measure = tcpMeasure ?? measureNodesTcp;
   final tcp = await measure(need, timeout: timeout, concurrency: concurrency);

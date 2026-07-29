@@ -249,6 +249,42 @@ void main() {
     expect(after['noprobe']?.state, TikNetClientPingState.noTarget);
   });
 
+  test('enrichUrlTestFailsWithTcp keeps failures قطع when the group has a working node', () async {
+    const nodes = [
+      TikNetPersonalProxyNode(
+        tag: 'germany',
+        groupTag: 'Select',
+        label: 'germany',
+        probeUrl: 'https://de1.example.com:443',
+      ),
+      TikNetPersonalProxyNode(
+        tag: 'reality',
+        groupTag: 'Select',
+        label: 'reality',
+        probeUrl: 'https://31.216.62.129:2086',
+      ),
+    ];
+    final before = {
+      'germany': const TikNetClientPingResult(state: TikNetClientPingState.reachable, pingMs: 137),
+      'reality': const TikNetClientPingResult(state: TikNetClientPingState.unreachable),
+    };
+    var tcpCalls = 0;
+    final after = await enrichUrlTestFailsWithTcp(
+      before,
+      nodes,
+      tcpMeasure: (list, {timeout = const Duration(seconds: 3), concurrency = 6}) async {
+        tcpCalls++;
+        return {
+          for (final n in list)
+            n.tag: const TikNetClientPingResult(state: TikNetClientPingState.reachable, pingMs: 50),
+        };
+      },
+    );
+    expect(tcpCalls, 0);
+    expect(after['reality']?.state, TikNetClientPingState.unreachable);
+    expect(after['germany']?.pingMs, 137);
+  });
+
   test('approximate TCP latency is labelled with a tilde', () {
     const exact = TikNetClientPingResult(state: TikNetClientPingState.reachable, pingMs: 132);
     const tcp = TikNetClientPingResult(
