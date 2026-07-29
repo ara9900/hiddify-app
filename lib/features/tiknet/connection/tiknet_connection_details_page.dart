@@ -9,6 +9,7 @@ import 'package:hiddify/features/proxy/active/ip_widget.dart';
 import 'package:hiddify/features/proxy/model/proxy_failure.dart';
 import 'package:hiddify/features/tiknet/connection/tiknet_connection_stats_provider.dart';
 import 'package:hiddify/features/tiknet/connection/tiknet_connection_uptime_provider.dart';
+import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
@@ -119,7 +120,11 @@ class TikNetConnectionDetailsPage extends ConsumerWidget {
                     if (activeProxy != null && (activeProxy.tagDisplay.isNotEmpty || activeProxy.type.isNotEmpty)) ...[
                       if (activeProxy.tagDisplay.isNotEmpty) ...[
                         const _Divider(),
-                        _DetailRow(icon: Icons.label_outline_rounded, label: 'پروکسی فعال', value: activeProxy.tagDisplay),
+                        _DetailRow(
+                          icon: Icons.label_outline_rounded,
+                          label: 'پروکسی فعال',
+                          value: stripHiddifyTagSuffix(activeProxy.tagDisplay),
+                        ),
                       ],
                       if (activeProxy.type.isNotEmpty) ...[
                         const _Divider(),

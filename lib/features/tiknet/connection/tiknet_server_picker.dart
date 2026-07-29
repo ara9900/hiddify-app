@@ -175,7 +175,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                             selected.catalogId != null &&
                             selected.catalogId == node.catalogId;
                         return _ServerRow(
-                          title: node.label,
+                          title: node.displayLabel,
                           subtitle: badge,
                           personal: !node.isCatalog,
                           selected: selectedNode || selectedLegacyCat,

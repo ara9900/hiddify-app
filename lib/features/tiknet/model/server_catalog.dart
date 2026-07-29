@@ -279,7 +279,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
         final ping = personalNodePings?[locked];
         return TikNetSelectedServerInfo(
           title: 'اتصال هوشمند',
-          subtitle: node != null ? 'متصل به ${node.label}' : 'بهترین سرور بر اساس پینگ',
+          subtitle: node != null ? 'متصل به ${node.displayLabel}' : 'بهترین سرور بر اساس پینگ',
           personal: true,
           pingLabel: ping?.pingLabel,
           pingColor: ping?.pingColor,
@@ -312,7 +312,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
       final ping = personalNodePings?[selected.personalTag!];
       final sourceLabel = node?.isCatalog == true ? 'کاتالوگ' : 'اشتراک';
       return TikNetSelectedServerInfo(
-        title: node?.label ?? selected.personalTag!,
+        title: node?.displayLabel ?? stripHiddifyTagSuffix(selected.personalTag!),
         subtitle: sourceLabel,
         personal: true,
         pingLabel: ping?.pingLabel,
@@ -331,7 +331,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
   if (merged != null) {
     final ping = personalNodePings?[merged.tag];
     return TikNetSelectedServerInfo(
-      title: merged.label,
+      title: merged.displayLabel,
       subtitle: 'کاتالوگ',
       personal: true,
       pingLabel: ping?.pingLabel,

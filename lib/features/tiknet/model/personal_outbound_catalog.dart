@@ -61,6 +61,18 @@ class TikNetPersonalProxyNode {
   final int? catalogId;
 
   bool get isCatalog => source == TikNetNodeSource.catalog;
+
+  /// Name shown in the picker / home card. Strips the core's uniqueness suffix.
+  String get displayLabel => stripHiddifyTagSuffix(label.isNotEmpty ? label : tag);
+}
+
+/// Hiddify's share-link → sing-box converter appends `§ N` so outbound tags stay
+/// unique (e.g. `Germany-1 § 3`). That marker is internal; the stock UI already
+/// strips it, and TikNet must do the same for every user-facing label.
+String stripHiddifyTagSuffix(String tag) {
+  final cut = tag.indexOf('§');
+  if (cut < 0) return tag.trimRight();
+  return tag.substring(0, cut).trimRight();
 }
 
 enum TikNetNodeSource {
@@ -266,7 +278,7 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromSubscriptionLinks(Strin
     if (uri == null || !_proxyUriSchemes.contains(uri.scheme.toLowerCase())) continue;
 
     final fragment = uri.hasFragment ? Uri.decodeComponent(uri.fragment.split(' -> ').first.trim()) : '';
-    final label = fragment.isNotEmpty ? fragment : 'سرور ${index + 1}';
+    final label = fragment.isNotEmpty ? stripHiddifyTagSuffix(fragment) : 'سرور ${index + 1}';
     final tag = fragment.isNotEmpty ? _safeTag(fragment, index) : 'node-$index';
 
     nodes.add(
@@ -527,9 +539,12 @@ String _resolveMainSelectorTag(Map<String, dynamic> config, List<Map<String, dyn
 }
 
 String _nodeLabel(Map<String, dynamic> o, String tag) {
-  final server = (o['server'] as String?)?.trim();
-  if (server != null && server.isNotEmpty) return tag;
-  return tag;
+  // Prefer remarks / name when present; always strip the core's `§ N` suffix.
+  final remarks = (o['remarks'] as String?)?.trim();
+  if (remarks != null && remarks.isNotEmpty) return stripHiddifyTagSuffix(remarks);
+  final name = (o['name'] as String?)?.trim();
+  if (name != null && name.isNotEmpty) return stripHiddifyTagSuffix(name);
+  return stripHiddifyTagSuffix(tag);
 }
 
 /// Hiddify `/xray/` subscription: JSON array — one object per server (see remarks + outbounds).
@@ -558,7 +573,7 @@ TikNetPersonalOutboundCatalog? _catalogFromXrayConfigBundle(List<dynamic> items)
       }
 
       seenTags.add(tag);
-      final label = remarks.isNotEmpty ? remarks : tag;
+      final label = stripHiddifyTagSuffix(remarks.isNotEmpty ? remarks : tag);
       nodes.add(
         TikNetPersonalProxyNode(
           tag: tag,

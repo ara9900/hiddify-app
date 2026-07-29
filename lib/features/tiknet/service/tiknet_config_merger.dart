@@ -393,9 +393,11 @@ List<String> _mergeOutboundTagList(dynamic existingRaw, List<String> extra) {
 }
 
 String _labelOf(Map<String, dynamic> o, String tag) {
-  final server = (o['server'] as String?)?.trim();
-  if (server != null && server.isNotEmpty) return tag;
-  return tag;
+  final remarks = (o['remarks'] as String?)?.trim();
+  if (remarks != null && remarks.isNotEmpty) return stripHiddifyTagSuffix(remarks);
+  final name = (o['name'] as String?)?.trim();
+  if (name != null && name.isNotEmpty) return stripHiddifyTagSuffix(name);
+  return stripHiddifyTagSuffix(tag);
 }
 
 String _sanitizeTag(String tag) {
