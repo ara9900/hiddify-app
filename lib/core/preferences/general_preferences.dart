@@ -157,6 +157,9 @@ abstract class Preferences {
   static final tikNetSmartLockedGroup = PreferencesNotifier.create<String, String>("tiknet_smart_locked_group", "");
   /// TikNet: JSON list of merged node metadata [{tag,label,source,catalogId}]
   static final tikNetNodeMetaJson = PreferencesNotifier.create<String, String>("tiknet_node_meta_json", "");
+  /// TikNet: hash of the config last written to the Hiddify profile on disk.
+  /// Only set after the core accepted it, so a failed apply is retried.
+  static final tikNetAppliedConfigHash = PreferencesNotifier.create<String, String>("tiknet_applied_config_hash", "");
   /// TikNet: panel server list mode — both | personal_only | catalog_only
   static final tikNetServerDisplayMode = PreferencesNotifier.create<String, String>(
     "tiknet_server_display_mode",

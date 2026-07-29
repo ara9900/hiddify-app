@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:crypto/crypto.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
@@ -246,7 +247,32 @@ class SyncService {
   Future<bool> applyProfileFromCache() async {
     final content = getConfigs();
     if (content.trim().isEmpty) return false;
-    return _applyProfileContent(content);
+    return _applyProfileContentWithRetry(content);
+  }
+
+  /// A cold-start sync races the core: rewriting a profile needs the core's
+  /// gRPC endpoint to convert and validate it, and until the service is up that
+  /// call is refused, leaving the core on the previous config. Retry while it
+  /// starts instead of failing silently.
+  static const _applyRetryDelays = [
+    Duration(seconds: 3),
+    Duration(seconds: 6),
+    Duration(seconds: 12),
+  ];
+
+  Future<bool> _applyProfileContentWithRetry(String content) async {
+    if (await _applyProfileContent(content)) return true;
+    for (final delay in _applyRetryDelays) {
+      await Future<void>.delayed(delay);
+      if (await _applyProfileContent(content)) {
+        if (tikNetMode) TikNetDiagnosticLog.i('sync', 'profile applied once core was ready');
+        return true;
+      }
+    }
+    if (tikNetMode) {
+      TikNetDiagnosticLog.w('sync', 'profile apply failed — core kept the previous config');
+    }
+    return false;
   }
 
   Future<bool> _applyProfileContent(String content) async {
@@ -309,8 +335,15 @@ class SyncService {
     final userOverride = UserOverride(name: tikNetProfileDisplayName);
 
     var existing = await _findTikNetProfile(repo);
+    final contentHash = _contentHash(content);
 
-    if (existing != null && _profileContentMatches(existing.id, content, pathResolver)) {
+    // Share-link payloads never match the converted file the core writes, so
+    // compare against the hash of the last payload the core actually accepted.
+    final alreadyApplied = existing != null &&
+        (_profileContentMatches(existing.id, content, pathResolver) ||
+            (_ref.read(Preferences.tikNetAppliedConfigHash) == contentHash &&
+                pathResolver.file(existing.id).existsSync()));
+    if (alreadyApplied) {
       await _ref.read(Preferences.tikNetProfileId.notifier).update(existing.id);
       await repo.setAsActive(existing.id).run();
       _ref.invalidate(personalOutboundProvider);
@@ -327,6 +360,7 @@ class SyncService {
           .run();
       if (result.isLeft()) return false;
       await _ref.read(Preferences.tikNetProfileId.notifier).update(existing.id);
+      await _ref.read(Preferences.tikNetAppliedConfigHash.notifier).update(contentHash);
       await repo.setAsActive(existing.id).run();
       _ref.invalidate(personalOutboundProvider);
       TikNetDiagnosticLog.i('sync', 'profile updated on disk while VPN stays up');
@@ -356,10 +390,13 @@ class SyncService {
     if (profileId == null || profileId.isEmpty) return false;
 
     await _ref.read(Preferences.tikNetProfileId.notifier).update(profileId);
+    await _ref.read(Preferences.tikNetAppliedConfigHash.notifier).update(contentHash);
     await repo.setAsActive(profileId).run();
     _ref.invalidate(personalOutboundProvider);
     return true;
   }
+
+  String _contentHash(String content) => md5.convert(utf8.encode(content)).toString();
 
   Future<void> _abortVpnIfNeeded() async {
     // Cold-start sync must NEVER kill a live TikNet tunnel just to rewrite the profile.
