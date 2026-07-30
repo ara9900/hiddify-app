@@ -491,6 +491,14 @@ bool selectionIsSmart(TikNetServerSelection sel) =>
     (sel.personalKind == TikNetPersonalPickKind.smart ||
         sel.personalKind == TikNetPersonalPickKind.defaultAuto);
 
+/// Legacy `cat:{id}` pick, or a merged personal proxy whose tag/id is catalog.
+bool selectionUsesCatalog(TikNetServerSelection sel) {
+  if (sel.catalogId != null && sel.catalogId! > 0) return true;
+  if (!sel.isPersonal) return true;
+  final tag = (sel.personalTag ?? '').trim();
+  return tag.isNotEmpty && RegExp(r'^cat-\d+-').hasMatch(tag);
+}
+
 bool selectionNeedsOutboundApply(TikNetServerSelection sel) {
   if (!sel.isPersonal && sel.catalogId != null) return true; // legacy cat:{id}
   return sel.isPersonal &&

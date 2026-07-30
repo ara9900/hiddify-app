@@ -13,6 +13,7 @@ import 'package:hiddify/features/profile/data/profile_repository.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_entitlement.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'package:hiddify/features/tiknet/service/auth_service.dart';
@@ -22,8 +23,8 @@ import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart'
 import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_config_merger.dart';
-import 'package:hiddify/features/tiknet/service/tiknet_subscription_sanitizer.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_node_meta.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_subscription_sanitizer.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_ping_settings.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
@@ -68,6 +69,14 @@ class SyncService {
       await _ref.read(Preferences.tikNetCachedProfile.notifier).update(jsonEncode(profileJson));
       await applyPanelPingSettingsFromBrand(_ref, profile.brand);
 
+      // Personal nodes die on the panel when volume/time ends or the account is
+      // disabled. Catalog (emergency free) servers do not — gate them here too.
+      final entitlement = evaluateTikNetEntitlement(profile);
+      if (!entitlement.allowed) {
+        await _abortVpnForEntitlementBlock(entitlement);
+        await _resetRestrictedSelections();
+      }
+
       List<int> subBytes = const [];
       try {
         subBytes = await api.getSubscriptionConfig(baseUrl: baseUrl, accessToken: token);
@@ -96,10 +105,28 @@ class SyncService {
         }
         displayMode = TikNetServerDisplayMode.fromApi(modeRaw ?? _ref.read(Preferences.tikNetServerDisplayMode));
         final parsed = TikNetServerCatalog.fromJson(catalogData);
-        if (displayMode != TikNetServerDisplayMode.personalOnly) {
+        // Still list catalog in the picker (as locked) when ineligible, but never
+        // merge free emergency outbounds into the live profile.
+        if (displayMode != TikNetServerDisplayMode.personalOnly && !entitlement.blocksCatalog) {
           catalogServers = parsed.servers.where((s) => s.accessible && s.id > 0).toList();
+        } else if (entitlement.blocksCatalog && tikNetMode) {
+          TikNetDiagnosticLog.i('sync', 'skip catalog merge — entitlement blocked', {
+            'block': entitlement.block?.name,
+          });
         }
-      } catch (_) {}
+        if (tikNetMode) {
+          TikNetDiagnosticLog.i('sync', 'catalog list', {
+            'mode': displayMode.name,
+            'listed': parsed.servers.length,
+            'accessible': catalogServers.length,
+            'ids': catalogServers.map((s) => s.id).take(12).toList(),
+          });
+        }
+      } catch (e) {
+        if (tikNetMode) {
+          TikNetDiagnosticLog.w('sync', 'catalog list fetch failed', {'err': e.toString()});
+        }
+      }
 
       final includeSub = displayMode != TikNetServerDisplayMode.catalogOnly;
       final catalogInputs = <TikNetCatalogConfigInput>[];
@@ -122,7 +149,13 @@ class SyncService {
       final merged = mergeTikNetConfigs(subscriptionRaw: subRaw, catalogConfigs: catalogInputs);
       final nodeCount = merged.nodes.length;
 
-      if (merged.isEmpty) {
+      if (entitlement.blocksCatalog) {
+        await _applyProfileWithoutCatalog(
+          includeSub: includeSub,
+          subRaw: subRaw,
+          merged: merged,
+        );
+      } else if (merged.isEmpty) {
         // Fallbacks: raw sub alone, or remote subscription URL.
         if (includeSub && subRaw != null && subRaw.trim().isNotEmpty) {
           await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRaw)));
@@ -198,9 +231,21 @@ class SyncService {
             final bytes = await api
                 .getServerConfig(baseUrl: baseUrl, accessToken: token, serverId: s.id)
                 .timeout(const Duration(seconds: 12));
-            if (bytes.isEmpty) return null;
+            if (bytes.isEmpty) {
+              if (tikNetMode) {
+                TikNetDiagnosticLog.w('sync', 'catalog config empty', {'id': s.id, 'name': s.name});
+              }
+              return null;
+            }
             return TikNetCatalogConfigInput(server: s, configBytes: bytes);
-          } catch (_) {
+          } catch (e) {
+            if (tikNetMode) {
+              TikNetDiagnosticLog.w('sync', 'catalog config fetch failed', {
+                'id': s.id,
+                'name': s.name,
+                'err': e.toString(),
+              });
+            }
             return null;
           }
         }),
@@ -217,6 +262,29 @@ class SyncService {
     final auth = _ref.read(authServiceProvider);
     if (!auth.hasAppSession()) return false;
 
+    final entitlement = currentEntitlement();
+    final sel = selectedServer;
+    if (entitlement.blocksCatalog && selectionUsesCatalog(sel)) {
+      await _resetRestrictedSelections();
+      TikNetDiagnosticLog.w('sync', 'refuse catalog apply — entitlement blocked', {
+        'block': entitlement.block?.name,
+      });
+      return false;
+    }
+
+    // Catalog picks must refresh+merge the selected server into the live profile.
+    // Re-applying a stale personal-only cache is what made Turkey show as selected
+    // while traffic kept exiting via Germany.
+    if (selectionUsesCatalog(sel)) {
+      final id = sel.catalogId ?? catalogIdFromOutboundTag(sel.personalTag);
+      TikNetDiagnosticLog.i('sync', 'apply catalog selection', {'id': id, 'raw': encodeServerSelection(sel)});
+      final ok = await ensureCatalogServerInProfile(id);
+      if (!ok) {
+        TikNetDiagnosticLog.w('sync', 'catalog selection not in profile after sync/inject', {'id': id});
+      }
+      return ok;
+    }
+
     if (_ref.read(Preferences.tikNetProfileId).isNotEmpty) {
       final cached = getConfigs();
       if (cached.trim().isNotEmpty && !isHiddifyXraySubscriptionBundle(cached)) {
@@ -225,6 +293,184 @@ class SyncService {
       }
     }
     return syncAllAndApplyProfile();
+  }
+
+  /// True when node meta (or tag heuristic) already has this catalog server.
+  bool profileHasCatalogServer(int catalogId) {
+    if (catalogId <= 0) return false;
+    final meta = decodeTikNetNodeMeta(_ref.read(Preferences.tikNetNodeMetaJson));
+    if (meta.values.any((n) => n.catalogId == catalogId)) return true;
+    final raw = getConfigs();
+    if (raw.trim().isEmpty) return false;
+    return RegExp('cat-$catalogId-').hasMatch(raw);
+  }
+
+  /// Sync, then if needed fetch+merge the specific catalog server so selection can dial it.
+  Future<bool> ensureCatalogServerInProfile(int? catalogId) async {
+    if (catalogId == null || catalogId <= 0) return false;
+
+    final synced = await syncAllAndApplyProfile();
+    if (profileHasCatalogServer(catalogId)) return synced || applyProfileFromCache();
+
+    final injected = await _injectCatalogServer(catalogId);
+    return injected;
+  }
+
+  Future<bool> _injectCatalogServer(int catalogId) async {
+    final auth = _ref.read(authServiceProvider);
+    final baseUrl = _ref.read(Preferences.tikNetPanelBaseUrl);
+    final token = auth.getToken();
+    if (baseUrl.isEmpty || token.isEmpty) return false;
+
+    final api = _ref.read(tikNetApiProvider);
+    TikNetServerEntry? server;
+    try {
+      final catalogData = await api.getServerCatalog(baseUrl: baseUrl, accessToken: token);
+      final parsed = TikNetServerCatalog.fromJson(catalogData);
+      server = parsed.servers.where((s) => s.id == catalogId).firstOrNull;
+    } catch (e) {
+      TikNetDiagnosticLog.w('sync', 'catalog list fetch failed during inject', {
+        'id': catalogId,
+        'err': e.toString(),
+      });
+    }
+    server ??= TikNetServerEntry(
+      id: catalogId,
+      name: 'سرور #$catalogId',
+      countryCode: '',
+      tier: 'free',
+      sourceType: 'catalog',
+      requiresPaid: false,
+      accessible: true,
+      sortOrder: 0,
+    );
+    if (!server.accessible) {
+      TikNetDiagnosticLog.w('sync', 'catalog server not accessible', {'id': catalogId});
+      return false;
+    }
+
+    List<int> bytes;
+    try {
+      bytes = await api
+          .getServerConfig(baseUrl: baseUrl, accessToken: token, serverId: catalogId)
+          .timeout(const Duration(seconds: 15));
+    } catch (e) {
+      TikNetDiagnosticLog.w('sync', 'catalog config fetch failed', {
+        'id': catalogId,
+        'err': e.toString(),
+      });
+      return false;
+    }
+    if (bytes.isEmpty) {
+      TikNetDiagnosticLog.w('sync', 'catalog config empty', {'id': catalogId});
+      return false;
+    }
+
+    var configBytes = bytes;
+    var extracted = _peekCatalogExtractCount(configBytes, catalogId: catalogId, name: server.name);
+    if (extracted == 0) {
+      final converted = await _convertPanelConfigToSingboxJson(bytes);
+      if (converted != null && converted.trim().isNotEmpty) {
+        configBytes = utf8.encode(converted);
+        extracted = _peekCatalogExtractCount(configBytes, catalogId: catalogId, name: server.name);
+      }
+    }
+    if (extracted == 0) {
+      TikNetDiagnosticLog.w('sync', 'catalog config not parseable as outbounds', {
+        'id': catalogId,
+        'bytes': bytes.length,
+        'head': utf8.decode(bytes.take(80).toList(), allowMalformed: true),
+      });
+      return false;
+    }
+
+    // Prefer a JSON subscription base when available; share-link cache still works as
+    // catalog-only merge base (subscriptionRaw ignored when not JSON).
+    var subRaw = getConfigs();
+    if (subRaw.trim().isEmpty) {
+      try {
+        final subBytes = await api.getSubscriptionConfig(baseUrl: baseUrl, accessToken: token);
+        if (subBytes.isNotEmpty) {
+          subRaw = sanitizeSubscriptionPayload(utf8.decode(subBytes, allowMalformed: true)).payload;
+        }
+      } catch (_) {}
+    } else {
+      final sanitized = sanitizeSubscriptionPayload(subRaw);
+      subRaw = sanitized.payload;
+    }
+
+    final merged = mergeTikNetConfigs(
+      subscriptionRaw: subRaw.trim().isEmpty ? null : subRaw,
+      catalogConfigs: [TikNetCatalogConfigInput(server: server, configBytes: configBytes)],
+    );
+    if (merged.isEmpty || !merged.nodes.any((n) => n.catalogId == catalogId)) {
+      TikNetDiagnosticLog.w('sync', 'catalog inject merge empty', {'id': catalogId});
+      return false;
+    }
+
+    await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(merged.configJson)));
+    await _ref.read(Preferences.tikNetNodeMetaJson.notifier).update(encodeTikNetNodeMeta(merged.nodes));
+    final ok = await applyProfileFromCache();
+    TikNetDiagnosticLog.i('sync', 'catalog inject ok', {
+      'id': catalogId,
+      'nodes': merged.nodes.length,
+      'applied': ok,
+    });
+    _ref.invalidate(personalOutboundProvider);
+    _ref.invalidate(serverCatalogProvider);
+    return ok && profileHasCatalogServer(catalogId);
+  }
+
+  int _peekCatalogExtractCount(List<int> bytes, {required int catalogId, required String name}) {
+    final merged = mergeTikNetConfigs(
+      catalogConfigs: [
+        TikNetCatalogConfigInput(
+          server: TikNetServerEntry(
+            id: catalogId,
+            name: name,
+            countryCode: '',
+            tier: 'free',
+            sourceType: 'catalog',
+            requiresPaid: false,
+            accessible: true,
+            sortOrder: 0,
+          ),
+          configBytes: bytes,
+        ),
+      ],
+    );
+    return merged.nodes.where((n) => n.catalogId == catalogId).length;
+  }
+
+  /// Convert share-link / non-JSON panel payloads to sing-box JSON via core validate.
+  Future<String?> _convertPanelConfigToSingboxJson(List<int> bytes) async {
+    final text = utf8.decode(bytes, allowMalformed: true).trim();
+    if (text.isEmpty) return null;
+    if (text.startsWith('{')) return text;
+    try {
+      final repo = await _ref.read(profileRepositoryProvider.future);
+      final paths = _ref.read(profilePathResolverProvider);
+      const convertId = 'tiknet-catalog-convert';
+      final file = paths.file(convertId);
+      final temp = paths.tempFile(convertId);
+      await file.writeAsString(text);
+      if (temp.existsSync()) temp.deleteSync();
+      final result = await repo.validateConfig(file.path, temp.path, null, false).run();
+      try {
+        file.deleteSync();
+      } catch (_) {}
+      return result.fold((_) => null, (_) {
+        if (!temp.existsSync()) return null;
+        final out = temp.readAsStringSync();
+        try {
+          temp.deleteSync();
+        } catch (_) {}
+        return out.trim().isEmpty ? null : out;
+      });
+    } catch (e) {
+      TikNetDiagnosticLog.w('sync', 'catalog convert failed', {'err': e.toString()});
+      return null;
+    }
   }
 
   TikNetServerSelection get selectedServer => parseServerSelection(_ref.read(Preferences.tikNetSelectedServer));
@@ -418,6 +664,116 @@ class SyncService {
     }
   }
 
+  /// Volume/time/admin blocks must tear down VPN even when startedByUser is true —
+  /// including any catalog (free emergency) tunnel the panel cannot kill itself.
+  Future<void> _abortVpnForEntitlementBlock(TikNetEntitlement entitlement) async {
+    if (!tikNetMode) return;
+    TikNetDiagnosticLog.i('sync', 'entitlement abort VPN', {'block': entitlement.block?.name});
+    await _ref.read(connectionNotifierProvider.notifier).forceStopForEntitlementBlock();
+  }
+
+  /// Drop catalog picks and any smart-lock stuck on a catalog outbound.
+  Future<void> _resetRestrictedSelections() async {
+    if (selectionUsesCatalog(selectedServer)) {
+      await setSelectedServer(smartSelection());
+    }
+    final locked = _ref.read(Preferences.tikNetSmartLockedTag).trim();
+    if (locked.isNotEmpty && isTikNetCatalogOutboundTag(locked)) {
+      await _ref.read(Preferences.tikNetSmartLockedTag.notifier).update('');
+      await _ref.read(Preferences.tikNetSmartLockedGroup.notifier).update('');
+    }
+  }
+
+  /// Rewrite the live profile without catalog leaves. Never leave a stale
+  /// merged cache that still contains `cat-{id}-…` outbounds.
+  Future<void> _applyProfileWithoutCatalog({
+    required bool includeSub,
+    required String? subRaw,
+    required TikNetMergedConfigResult merged,
+  }) async {
+    if (!merged.isEmpty) {
+      final cleanedJson = stripCatalogOutboundsFromConfig(merged.configJson) ?? merged.configJson;
+      final personalNodes = merged.nodes.where((n) => !n.isCatalog).toList();
+      await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(cleanedJson)));
+      await _ref.read(Preferences.tikNetNodeMetaJson.notifier).update(encodeTikNetNodeMeta(personalNodes));
+      await applyProfileFromCache();
+      return;
+    }
+
+    if (includeSub && subRaw != null && subRaw.trim().isNotEmpty) {
+      final personalOnly = mergeTikNetConfigs(subscriptionRaw: subRaw, catalogConfigs: const []);
+      if (!personalOnly.isEmpty) {
+        await _ref
+            .read(Preferences.tikNetCachedConfig.notifier)
+            .update(base64Encode(utf8.encode(personalOnly.configJson)));
+        await _ref.read(Preferences.tikNetNodeMetaJson.notifier).update(encodeTikNetNodeMeta(personalOnly.nodes));
+        await applyProfileFromCache();
+        return;
+      }
+      await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRaw)));
+      await _stripCatalogFromNodeMeta();
+      await applyProfileFromCache();
+      return;
+    }
+
+    await _purgeCatalogFromLocalStore();
+  }
+
+  Future<void> _purgeCatalogFromLocalStore() async {
+    final sources = <String>[];
+    final cached = getConfigs();
+    if (cached.trim().isNotEmpty) sources.add(cached);
+
+    final profileId = _ref.read(Preferences.tikNetProfileId);
+    if (profileId.isNotEmpty) {
+      try {
+        final repo = await _ref.read(profileRepositoryProvider.future);
+        final rawProfile = await repo.getRawConfig(profileId).run();
+        rawProfile.fold((_) {}, (c) {
+          if (c.trim().isNotEmpty && !sources.contains(c)) sources.add(c);
+        });
+      } catch (_) {}
+    }
+
+    for (final raw in sources) {
+      final stripped = stripCatalogOutboundsFromConfig(raw);
+      if (stripped == null || stripped.trim().isEmpty) continue;
+      await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(stripped)));
+      await _stripCatalogFromNodeMeta();
+      if (await applyProfileFromCache()) {
+        TikNetDiagnosticLog.i('sync', 'purged catalog outbounds from local profile');
+        return;
+      }
+    }
+
+    // No usable personal config left — wipe cache and replace on-disk profile so
+    // leftover cat-* outbounds cannot be dialed even if connect is somehow forced.
+    await _wipeLocalProfileAfterCatalogBlock();
+  }
+
+  static const _directOnlyProfile = '''
+{
+  "outbounds": [
+    {"type": "direct", "tag": "direct"},
+    {"type": "block", "tag": "block"}
+  ],
+  "route": {"final": "direct"}
+}
+''';
+
+  Future<void> _wipeLocalProfileAfterCatalogBlock() async {
+    await _ref.read(Preferences.tikNetCachedConfig.notifier).update('');
+    await _ref.read(Preferences.tikNetNodeMetaJson.notifier).update('');
+    final ok = await _applyLocalProfileContent(_directOnlyProfile);
+    TikNetDiagnosticLog.i('sync', 'wiped local profile after catalog block', {'ok': ok});
+  }
+
+  Future<void> _stripCatalogFromNodeMeta() async {
+    final meta = decodeTikNetNodeMeta(_ref.read(Preferences.tikNetNodeMetaJson));
+    final kept = meta.values.where((n) => !n.isCatalog && (n.catalogId == null || n.catalogId! <= 0)).toList();
+    await _ref.read(Preferences.tikNetNodeMetaJson.notifier).update(encodeTikNetNodeMeta(kept));
+  }
+
   bool _profileContentMatches(String profileId, String content, ProfilePathResolver pathResolver) {
     final file = pathResolver.file(profileId);
     if (!file.existsSync()) return false;
@@ -461,6 +817,9 @@ class SyncService {
       if (p.daysRemaining != null) 'days_remaining': p.daysRemaining,
       if (p.trafficUsedBytes != null) 'traffic_used_bytes': p.trafficUsedBytes,
       if (p.trafficLimitBytes != null) 'traffic_limit_bytes': p.trafficLimitBytes,
+      if (p.isActive != null) 'is_active': p.isActive,
+      if (p.isBlocked != null) 'is_blocked': p.isBlocked,
+      if (p.status != null && p.status!.isNotEmpty) 'status': p.status,
       'shop_enabled': p.shopEnabled,
       if (p.brand != null && !p.brand!.isEmpty)
         'brand': {
@@ -505,6 +864,9 @@ class SyncService {
     if (exp == null) return false;
     return DateTime.now().isAfter(exp);
   }
+
+  /// Connect + catalog free servers allowed for the cached profile.
+  TikNetEntitlement currentEntitlement() => evaluateTikNetEntitlement(getProfile());
 
   DateTime? getLastSyncTime() => _ref.read(Preferences.tikNetLastSyncTime);
 }

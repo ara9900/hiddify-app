@@ -297,4 +297,42 @@ void main() {
       expect(node?.tag, 'cat-5-x');
     });
   });
+
+  group('stripCatalogOutboundsFromConfig', () {
+    test('removes cat-{id}- leaves and cleans selector/urltest refs', () {
+      final merged = mergeTikNetConfigs(
+        subscriptionRaw: _subConfig(proxyTags: ['de-sub'], withUrltest: true),
+        catalogConfigs: [
+          TikNetCatalogConfigInput(
+            server: _server(7, 'DE Catalog'),
+            configBytes: utf8.encode(_catalogConfig(tag: 'proxy')),
+          ),
+        ],
+      );
+      expect(merged.nodes.any((n) => n.isCatalog), isTrue);
+
+      final stripped = stripCatalogOutboundsFromConfig(merged.configJson);
+      expect(stripped, isNotNull);
+      expect(stripped!.contains('cat-7-'), isFalse);
+      expect(stripped.contains('de-sub'), isTrue);
+      expect(stripCatalogOutboundsFromConfig(stripped), isNull);
+    });
+  });
+
+  group('selectionUsesCatalog', () {
+    test('detects legacy and merged catalog picks', () {
+      expect(selectionUsesCatalog(parseServerSelection('cat:3')), isTrue);
+      expect(
+        selectionUsesCatalog((
+          isPersonal: true,
+          catalogId: null,
+          personalKind: TikNetPersonalPickKind.proxy,
+          personalTag: 'cat-9-de',
+          personalGroupTag: 'Select',
+        )),
+        isTrue,
+      );
+      expect(selectionUsesCatalog(smartSelection()), isFalse);
+    });
+  });
 }

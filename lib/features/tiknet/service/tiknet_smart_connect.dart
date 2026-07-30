@@ -7,6 +7,7 @@ import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
 import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
+import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_core_selection.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
@@ -68,7 +69,11 @@ Future<void> applyTikNetSmartConnect(WidgetRef ref) async {
         .measureNodePingsFromCore(catalog)
         .timeout(const Duration(seconds: 14), onTimeout: () => const {});
 
-    final best = pickBestNodeByPing(catalog.nodes, pings);
+    final best = pickBestNodeByPing(
+      catalog.nodes,
+      pings,
+      excludeCatalog: ref.read(syncServiceProvider).currentEntitlement().blocksCatalog,
+    );
     if (best == null) {
       // Nothing measured at all — leave the lowest-delay group installed above
       // rather than locking onto an arbitrary node that may be one of the dead ones.
@@ -110,12 +115,14 @@ typedef TikNetSmartPick = ({String tag, String groupTag, int pingMs, bool approx
 /// node has a real measurement.
 TikNetSmartPick? pickBestNodeByPing(
   List<TikNetPersonalProxyNode> nodes,
-  Map<String, TikNetClientPingResult> pings,
-) {
+  Map<String, TikNetClientPingResult> pings, {
+  bool excludeCatalog = false,
+}) {
   TikNetSmartPick? best;
   TikNetSmartPick? bestApproximate;
 
   for (final node in nodes) {
+    if (excludeCatalog && node.isCatalog) continue;
     final ping = pings[node.tag];
     final ms = ping?.pingMs;
     if (ping == null || !ping.reachable || ms == null || ms <= 0 || ms >= 65000) continue;

@@ -47,6 +47,9 @@ class TikNetUserInfo {
     this.daysRemaining,
     this.trafficUsedBytes,
     this.trafficLimitBytes,
+    this.isActive,
+    this.isBlocked,
+    this.status,
     this.brand,
     this.shopEnabled = true,
   });
@@ -60,6 +63,12 @@ class TikNetUserInfo {
   final int? daysRemaining;
   final int? trafficUsedBytes;
   final int? trafficLimitBytes;
+  /// Panel account switch — `false` means reseller/admin deactivated the user.
+  final bool? isActive;
+  /// Explicit ban flag from panel when present.
+  final bool? isBlocked;
+  /// Free-form panel status (`active`, `blocked`, `disabled`, …).
+  final String? status;
   final TikNetBrand? brand;
   final bool shopEnabled;
 
@@ -77,10 +86,21 @@ class TikNetUserInfo {
       daysRemaining: (json['days_remaining'] as num?)?.toInt(),
       trafficUsedBytes: (json['traffic_used_bytes'] as num?)?.toInt(),
       trafficLimitBytes: (json['traffic_limit_bytes'] as num?)?.toInt(),
+      isActive: _readOptionalBool(json, const ['is_active', 'active']),
+      isBlocked: _readOptionalBool(json, const ['is_blocked', 'blocked', 'is_banned', 'banned']),
+      status: (json['status'] as String?)?.trim() ?? (json['account_status'] as String?)?.trim(),
       brand: brandRaw is Map ? TikNetBrand.fromJson(Map<String, dynamic>.from(brandRaw)) : null,
       shopEnabled: json['shop_enabled'] as bool? ?? true,
     );
   }
+}
+
+bool? _readOptionalBool(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final v = json[key];
+    if (v is bool) return v;
+  }
+  return null;
 }
 
 class TikNetCustomerOrder {

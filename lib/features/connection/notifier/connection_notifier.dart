@@ -15,6 +15,8 @@ import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
+import 'package:hiddify/features/tiknet/service/sync_service.dart';
+import 'package:hiddify/features/tiknet/model/tiknet_entitlement.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
@@ -95,6 +97,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       Future.microtask(() async {
         if (!ref.read(Preferences.startedByUser)) {
           if (ref.read(tikNetUrlTestProbeActiveProvider)) return;
+          // Expired/blocked accounts must not keep a leftover tunnel (incl. catalog).
+          if (!_tikNetEntitlementAllowsConnect()) {
+            await forceStopForEntitlementBlock();
+            return;
+          }
           // Never force-stop a live tunnel because of a prefs/status flicker.
           if (await ref.read(hiddifyCoreServiceProvider).adoptRunningVpnSession()) {
             loggy.info("startedByUser=false but VPN live — adopting, not force-stopping");
@@ -170,6 +177,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   ///
   /// On iOS, proxy mode may still involve the network extension — we still attempt the probe.
   Future<T> runUrlTestProbe<T>(Future<T> Function() action) async {
+    if (tikNetMode && !_tikNetEntitlementAllowsConnect()) {
+      throw StateError('urltest probe blocked by entitlement');
+    }
     final startedByUser = ref.read(Preferences.startedByUser);
     final uiStatus = state.valueOrNull;
     if (startedByUser && uiStatus is Connected) {
@@ -293,7 +303,20 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
 
   ConnectionRepository get _connectionRepo => ref.read(connectionRepositoryProvider);
 
+  /// Hard stop used when the account is expired / exhausted / disabled so a
+  /// leftover Android VPN (including catalog) cannot keep routing.
+  Future<void> forceStopForEntitlementBlock() async {
+    await ref.read(Preferences.startedByUser.notifier).update(false);
+    if (tikNetMode) {
+      await ref.read(Preferences.tikNetVpnConnectedAt.notifier).update(null);
+    }
+    await abortConnection();
+    await _forceStopCore();
+    state = const AsyncData(Disconnected());
+  }
+
   Future<void> mayConnect() async {
+    if (tikNetMode && !_tikNetEntitlementAllowsConnect()) return;
     if (state case AsyncData(:final value)) {
       if (value case Disconnected()) return _connect();
     }
@@ -305,6 +328,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   /// status briefly flickers to STOPPED and a full reconnect would bounce the tunnel.
   Future<void> restoreVpnSessionIfNeeded() async {
     if (!tikNetMode || !ref.read(Preferences.startedByUser)) return;
+    if (!_tikNetEntitlementAllowsConnect()) {
+      TikNetDiagnosticLog.w('vpn', 'restore blocked by entitlement');
+      await forceStopForEntitlementBlock();
+      return;
+    }
 
     final core = ref.read(hiddifyCoreServiceProvider);
 
@@ -335,12 +363,21 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   Future<void> toggleConnection() async {
     final haptic = ref.read(hapticServiceProvider.notifier);
     if (state case AsyncError()) {
+      if (tikNetMode && !_tikNetEntitlementAllowsConnect()) {
+        await forceStopForEntitlementBlock();
+        return;
+      }
       await _awaitUrlTestProbeIfActive();
       await haptic.lightImpact();
       await _connect();
     } else if (state case AsyncData(:final value)) {
       switch (value) {
         case Disconnected():
+          if (tikNetMode && !_tikNetEntitlementAllowsConnect()) {
+            await haptic.mediumImpact();
+            await forceStopForEntitlementBlock();
+            return;
+          }
           // Mark user intent first so any active urltest probe aborts immediately.
           await haptic.lightImpact();
           _ignoreCoreUntilStopped = false;
@@ -360,6 +397,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   Future<void> reconnect(ProfileEntity? profile) async {
+    if (tikNetMode && !_tikNetEntitlementAllowsConnect()) {
+      TikNetDiagnosticLog.w('vpn', 'reconnect blocked by entitlement');
+      await forceStopForEntitlementBlock();
+      return;
+    }
     if (state case AsyncData(:final value) when value == const Connected()) {
       if (profile == null) {
         loggy.info("no active profile, disconnecting");
@@ -402,7 +444,18 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     );
   }
 
+  bool _tikNetEntitlementAllowsConnect() {
+    if (!tikNetMode) return true;
+    return evaluateTikNetEntitlement(ref.read(syncServiceProvider).getProfile()).allowed;
+  }
+
   Future<void> _connectThrottled() async {
+    if (tikNetMode && !_tikNetEntitlementAllowsConnect()) {
+      loggy.info("tiknet entitlement blocks connect");
+      TikNetDiagnosticLog.w('vpn', 'connect blocked by entitlement');
+      await forceStopForEntitlementBlock();
+      return;
+    }
     // Tunnel already up (app reopen) — never bounce via stop/start.
     if (tikNetMode && await ref.read(hiddifyCoreServiceProvider).adoptRunningVpnSession()) {
       loggy.info("skip connect — VPN already running");

@@ -227,6 +227,53 @@ TikNetMergedConfigResult mergeTikNetConfigs({
   );
 }
 
+/// True when an outbound tag was assigned by [mergeTikNetConfigs] for a catalog server.
+bool isTikNetCatalogOutboundTag(String tag) => RegExp(r'^cat-\d+-').hasMatch(tag.trim());
+
+/// Catalog id embedded in a merged tag like `cat-12-turkey`.
+int? catalogIdFromOutboundTag(String? tag) {
+  final m = RegExp(r'^cat-(\d+)-').firstMatch((tag ?? '').trim());
+  if (m == null) return null;
+  return int.tryParse(m.group(1)!);
+}
+
+/// Removes catalog (emergency free) leaf outbounds from a merged sing-box JSON profile.
+///
+/// Returns `null` when [raw] is not JSON or already has no catalog tags.
+String? stripCatalogOutboundsFromConfig(String raw) {
+  final map = _parseSingboxMap(raw);
+  if (map == null) return null;
+
+  final outs = _outboundsList(map);
+  final drop = <String>{
+    for (final o in outs)
+      if (isTikNetCatalogOutboundTag((o['tag'] as String?) ?? '')) (o['tag'] as String).trim(),
+  };
+  if (drop.isEmpty) return null;
+
+  final kept = <Map<String, dynamic>>[];
+  for (final o in outs) {
+    final tag = (o['tag'] as String?)?.trim() ?? '';
+    if (drop.contains(tag)) continue;
+    final type = _typeOf(o);
+    if (type == 'selector' || type == 'urltest' || type == 'balancer') {
+      final neu = Map<String, dynamic>.from(o);
+      final refs = _tagList(neu['outbounds']).where((t) => !drop.contains(t)).toList();
+      neu['outbounds'] = refs;
+      final def = neu['default']?.toString().trim();
+      if (def != null && def.isNotEmpty && drop.contains(def)) {
+        neu['default'] = refs.isNotEmpty ? refs.first : null;
+      }
+      kept.add(neu);
+    } else {
+      kept.add(Map<String, dynamic>.from(o));
+    }
+  }
+
+  map['outbounds'] = kept;
+  return const JsonEncoder.withIndent('  ').convert(map);
+}
+
 class _ExtractedOutbound {
   const _ExtractedOutbound({
     required this.tag,
@@ -263,11 +310,21 @@ List<_ExtractedOutbound> _extractCatalogOutbounds(
       map = decoded;
     } else if (decoded is Map) {
       map = Map<String, dynamic>.from(decoded);
+    } else if (decoded is List) {
+      // Some panels return a bare outbounds array.
+      map = {'outbounds': decoded};
     }
   } catch (_) {
     return const [];
   }
   if (map == null) return const [];
+
+  // Single outbound object (no wrapping "outbounds" list).
+  if (_outboundsList(map).isEmpty && map['type'] is String && map['tag'] is String) {
+    map = {
+      'outbounds': [Map<String, dynamic>.from(map)],
+    };
+  }
 
   final outs = _outboundsList(map);
   if (outs.isEmpty) return const [];

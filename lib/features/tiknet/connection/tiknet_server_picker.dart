@@ -12,6 +12,7 @@ import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_country_flag.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -48,6 +49,8 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     final theme = Theme.of(context);
     final catalogAsync = ref.watch(serverCatalogProvider);
     final personalAsync = ref.watch(personalOutboundProvider);
+    final entitlement = ref.watch(tikNetEntitlementProvider);
+    final catalogLockedByEntitlement = entitlement.blocksCatalog;
     final selected = ref.watch(selectedServerProvider);
     final sync = ref.read(syncServiceProvider);
     final vpnConnected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
@@ -132,22 +135,47 @@ class TikNetServerPickerSheet extends ConsumerWidget {
               final showSub = catalog.displayMode != TikNetServerDisplayMode.catalogOnly;
               final showCatalog = catalog.displayMode != TikNetServerDisplayMode.personalOnly;
               final nodes = filterPickerNodesForDisplayMode(allNodes, catalog.displayMode);
-              final extraAccessible = showCatalog
+              final selectableNodes =
+                  catalogLockedByEntitlement ? nodes.where((n) => !n.isCatalog).toList() : nodes;
+              final extraAccessible = showCatalog && !catalogLockedByEntitlement
                   ? accessibleCatalogMissingFromMerge(catalog.servers, allNodes)
                   : const <TikNetServerEntry>[];
               final mergedCatalogIds = {
                 for (final n in allNodes)
                   if (n.catalogId != null) n.catalogId!,
               };
-              final lockedCatalog = showCatalog
-                  ? catalog.servers.where((s) => !s.accessible && !mergedCatalogIds.contains(s.id)).toList()
-                  : const <TikNetServerEntry>[];
-              final hasAnyConfigRows = nodes.isNotEmpty || extraAccessible.isNotEmpty;
+              final lockedCatalog = <TikNetServerEntry>[
+                if (showCatalog)
+                  ...catalog.servers.where((s) => !s.accessible && !mergedCatalogIds.contains(s.id)),
+                if (showCatalog && catalogLockedByEntitlement)
+                  ...catalog.servers.where((s) => s.accessible && s.id > 0),
+              ];
+              final seenLockedIds = <int>{};
+              final lockedCatalogUnique = [
+                for (final s in lockedCatalog)
+                  if (seenLockedIds.add(s.id)) s,
+              ];
+              final lockedMergedCatalogNodes = catalogLockedByEntitlement
+                  ? nodes.where((n) => n.isCatalog).toList()
+                  : const <TikNetPersonalProxyNode>[];
+              final hasAnyConfigRows = selectableNodes.isNotEmpty ||
+                  extraAccessible.isNotEmpty ||
+                  lockedCatalogUnique.isNotEmpty ||
+                  lockedMergedCatalogNodes.isNotEmpty;
 
               return ListView(
                 controller: scrollController,
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
+                  if (catalogLockedByEntitlement && entitlement.message.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+                      child: Text(
+                        '${entitlement.message} سرورهای کاتالوگ (رایگان اضطراری) هم قفل هستند.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: TikNetColors.error, fontSize: 12, height: 1.4),
+                      ),
+                    ),
                   if (showSub || showCatalog) ...[
                     _ServerRow(
                       title: 'اتصال هوشمند',
@@ -164,8 +192,9 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                       ),
                     if (hasAnyConfigRows) ...[
-                      const _SectionHeader(title: 'همه سرورها'),
-                      ...sortNodesByPing(nodes, nodePings).map((node) {
+                      if (selectableNodes.isNotEmpty || extraAccessible.isNotEmpty)
+                        const _SectionHeader(title: 'همه سرورها'),
+                      ...sortNodesByPing(selectableNodes, nodePings).map((node) {
                         final ping = nodePings[node.tag];
                         final badge = node.isCatalog ? 'کاتالوگ' : 'اشتراک';
                         final selectedNode = selected.isPersonal &&
@@ -221,9 +250,19 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                         );
                       }),
                     ],
-                    if (lockedCatalog.isNotEmpty) ...[
+                    if (lockedCatalogUnique.isNotEmpty || lockedMergedCatalogNodes.isNotEmpty) ...[
                       const _SectionHeader(title: 'قفل‌شده'),
-                      ...lockedCatalog.map(
+                      ...lockedMergedCatalogNodes.map(
+                        (n) => _ServerRow(
+                          title: n.displayLabel,
+                          subtitle: 'کاتالوگ',
+                          personal: false,
+                          selected: false,
+                          enabled: false,
+                          locked: true,
+                        ),
+                      ),
+                      ...lockedCatalogUnique.map(
                         (s) => _ServerRow(
                           title: s.name,
                           subtitle: [s.countryLabel, s.tierLabel, 'کاتالوگ'].where((e) => e.isNotEmpty).join(' · '),
@@ -272,6 +311,22 @@ class TikNetServerPickerSheet extends ConsumerWidget {
     SyncService sync,
     TikNetServerSelection selection,
   ) async {
+    final entitlement = ref.read(tikNetEntitlementProvider);
+    if (entitlement.blocksCatalog && selectionUsesCatalog(selection)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              entitlement.message.isNotEmpty
+                  ? entitlement.message
+                  : 'سرورهای کاتالوگ در حال حاضر در دسترس نیستند.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
     Navigator.pop(context);
     await clearTikNetSmartLockWidget(ref);
     await sync.setSelectedServer(selection);
@@ -287,7 +342,13 @@ class TikNetServerPickerSheet extends ConsumerWidget {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok ? 'سرور انتخاب شد.' : 'اعمال سرور ناموفق بود.'),
+          content: Text(
+            ok
+                ? 'سرور انتخاب شد.'
+                : (selectionUsesCatalog(selection)
+                    ? 'سرور کاتالوگ آماده نشد. بروزرسانی را بزنید یا دوباره تلاش کنید.'
+                    : 'اعمال سرور ناموفق بود.'),
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );

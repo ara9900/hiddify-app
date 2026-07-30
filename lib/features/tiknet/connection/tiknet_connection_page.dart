@@ -21,7 +21,6 @@ import 'package:hiddify/features/tiknet/service/tiknet_telemetry_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_app_version_label.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
-import 'package:hiddify/utils/shamsi_date_format.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class TikNetConnectionPage extends HookConsumerWidget {
@@ -47,21 +46,17 @@ class TikNetConnectionPage extends HookConsumerWidget {
       smartLockedTag: smartLocked,
     );
 
-    final subscriptionExpired = () {
-      final info = ref.watch(tikNetUserInfoProvider);
-      final exp = info?.expireDate;
-      return exp != null && DateTime.now().isAfter(exp);
-    }();
-    final subscriptionExpiredDate = ref.watch(tikNetUserInfoProvider)?.expireDate;
+    final entitlement = ref.watch(tikNetEntitlementProvider);
+    final vpnBlocked = !entitlement.allowed;
 
     useEffect(() {
-      if (subscriptionExpired && ref.read(connectionNotifierProvider).valueOrNull is Connected) {
+      if (vpnBlocked) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          ref.read(connectionNotifierProvider.notifier).abortConnection();
+          unawaited(ref.read(connectionNotifierProvider.notifier).forceStopForEntitlementBlock());
         });
       }
       return null;
-    }, [subscriptionExpired]);
+    }, [vpnBlocked, entitlement.block]);
 
     final isConnected = connectionStatus.valueOrNull is Connected;
     final isConnecting = connectionStatus.valueOrNull is Connecting;
@@ -88,8 +83,6 @@ class TikNetConnectionPage extends HookConsumerWidget {
       AsyncData(value: Disconnecting()) => 'در حال قطع اتصال',
       _ => 'برای اتصال، دکمه پایین را بزنید',
     };
-
-    final enabled = !subscriptionExpired;
 
     ref.listen(connectionNotifierProvider, (prev, next) {
       final wasConnected = prev?.valueOrNull is Connected;
@@ -135,11 +128,11 @@ class TikNetConnectionPage extends HookConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (subscriptionExpired && subscriptionExpiredDate != null) ...[
+                      if (vpnBlocked && entitlement.message.isNotEmpty) ...[
                         _AlertBanner(
                           icon: Icons.warning_amber_rounded,
                           color: TikNetColors.error,
-                          text: 'اشتراک شما در ${formatShamsiDate(subscriptionExpiredDate)} به پایان رسیده',
+                          text: entitlement.message,
                         ),
                         const Gap(16),
                       ],
@@ -158,14 +151,20 @@ class TikNetConnectionPage extends HookConsumerWidget {
                       const Gap(28),
                       Center(
                         child: AbsorbPointer(
-                          absorbing: subscriptionExpired,
+                          absorbing: vpnBlocked && !isConnected && !isConnecting && !isDisconnecting,
                           child: _TikNetConnectButton(
                             connectionStatus: connectionStatus,
                             requiresReconnect: requiresReconnect,
-                            enabled: enabled && !subscriptionExpired,
+                            enabled: (!vpnBlocked || isConnected || isConnecting || isDisconnecting),
                             onTap: () async {
                               if (isConnecting || isDisconnecting) {
                                 await ref.read(connectionNotifierProvider.notifier).abortConnection();
+                                return;
+                              }
+                              if (vpnBlocked) {
+                                if (isConnected) {
+                                  await ref.read(connectionNotifierProvider.notifier).abortConnection();
+                                }
                                 return;
                               }
                               if (requiresReconnect == true &&
