@@ -310,7 +310,10 @@ class SyncService {
     if (catalogId == null || catalogId <= 0) return false;
 
     final synced = await syncAllAndApplyProfile();
-    if (profileHasCatalogServer(catalogId)) return synced || applyProfileFromCache();
+    if (profileHasCatalogServer(catalogId)) {
+      if (synced) return true;
+      return await applyProfileFromCache();
+    }
 
     final injected = await _injectCatalogServer(catalogId);
     return injected;
