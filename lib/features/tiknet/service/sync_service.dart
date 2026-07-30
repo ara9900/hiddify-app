@@ -28,6 +28,7 @@ import 'package:hiddify/features/tiknet/service/tiknet_subscription_sanitizer.da
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_ping_settings.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
+import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/utils/link_parsers.dart';
 
 /// Thrown when sync fails due to 401 (token expired). Caller should redirect to login.
@@ -194,12 +195,32 @@ class SyncService {
           merged: merged,
         );
       } else if (merged.isEmpty) {
-        final okRemote = await applyRemoteSubscriptionProfile();
-        if (!okRemote && includeSub && subRawPayload != null && subRawPayload.trim().startsWith('{')) {
-          await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRawPayload)));
-          await applyProfileFromCache();
-        } else if (!okRemote && tikNetMode) {
-          TikNetDiagnosticLog.w('sync', 'merge empty - kept previous profile (share-link apply skipped)');
+        // Personal may already be on disk from the earlier apply/skip path.
+        final disk = await _readActiveProfileJson();
+        final diskHasPersonal = disk != null &&
+            mergeTikNetConfigs(subscriptionRaw: disk, catalogConfigs: const [])
+                .nodes
+                .any((n) => !n.isCatalog);
+        if (diskHasPersonal) {
+          if (tikNetMode) {
+            TikNetDiagnosticLog.w(
+              'sync',
+              'merge empty after catalog convert miss — kept on-disk personal profile',
+              {'catalog_servers': catalogServers.length, 'configs_ok': catalogInputs.length},
+            );
+          }
+        } else {
+          try {
+            final okRemote = await applyRemoteSubscriptionProfile().timeout(const Duration(seconds: 25));
+            if (!okRemote && includeSub && subRawPayload != null && subRawPayload.trim().startsWith('{')) {
+              await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRawPayload)));
+              await applyProfileFromCache();
+            } else if (!okRemote && tikNetMode) {
+              TikNetDiagnosticLog.w('sync', 'merge empty - kept previous profile (share-link apply skipped)');
+            }
+          } on TimeoutException {
+            TikNetDiagnosticLog.w('sync', 'merge-empty remote apply timed out');
+          }
         }
       } else {
         final mergedBytes = utf8.encode(merged.configJson);
@@ -611,6 +632,23 @@ class SyncService {
     if (text.startsWith('{')) return text;
 
     try {
+      // Cold start: fgClient is late-initialized; force setup before parse or
+      // validateConfig throws LateInitializationError and aborts convert.
+      try {
+        final setupResult = await _ref
+            .read(hiddifyCoreServiceProvider)
+            .setup()
+            .run()
+            .timeout(const Duration(seconds: 15));
+        if (setupResult.isLeft()) {
+          TikNetDiagnosticLog.w('sync', 'core setup before convert failed', {
+            'err': setupResult.swap().toNullable()?.toString() ?? 'unknown',
+          });
+        }
+      } on Object catch (e) {
+        TikNetDiagnosticLog.w('sync', 'core setup before convert failed', {'err': e.toString()});
+      }
+
       final repo = await _ref.read(profileRepositoryProvider.future);
       final paths = _ref.read(profilePathResolverProvider);
       final convertId = 'tiknet-cat-convert-${DateTime.now().microsecondsSinceEpoch}';
