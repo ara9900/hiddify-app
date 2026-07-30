@@ -103,6 +103,16 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
       await container.read(ConfigOptions.useXrayCoreWhenPossible.notifier).update(true);
       await prefs.setBool('tiknet_reality_defaults_v1', true);
     });
+    // After shipping a patched AAR, force the subscription through ray2sing again so
+    // Reality links pick up spiderX via the Xray conversion path (old converted JSON
+    // had only pbk/sid and failed while the same link worked in v2rayNG).
+    await _init("tiknet reality xray reimport", () async {
+      final prefs = container.read(sharedPreferencesProvider).requireValue;
+      if (prefs.getBool('tiknet_reality_xray_reimport_v1') == true) return;
+      await container.read(ConfigOptions.useXrayCoreWhenPossible.notifier).update(true);
+      await container.read(Preferences.tikNetAppliedConfigHash.notifier).update('');
+      await prefs.setBool('tiknet_reality_xray_reimport_v1', true);
+    });
     // Move existing installs off TCP remote DNS and the 10-minute urltest cycle;
     // both measurably hurt throughput (see ConfigOptions for the reasoning).
     await _init("tiknet network defaults", () async {
