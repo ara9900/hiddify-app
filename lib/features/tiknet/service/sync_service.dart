@@ -146,20 +146,35 @@ class SyncService {
           'labels': sanitized.droppedLabels.take(6).toList(),
         });
       }
-      final subRaw = sanitized?.payload;
+      final subRawPayload = sanitized?.payload;
+      // Subscription is often share-links; convert to JSON before merging catalog so
+      // personal nodes are not dropped when catalog convert succeeds.
+      String? subRaw = subRawPayload;
+      if (subRaw != null &&
+          subRaw.trim().isNotEmpty &&
+          !subRaw.trim().startsWith('{') &&
+          catalogInputs.isNotEmpty) {
+        final convertedSub = await _convertPanelConfigToSingboxJson(utf8.encode(subRaw));
+        if (convertedSub != null && convertedSub.trim().startsWith('{')) {
+          subRaw = convertedSub;
+          if (tikNetMode) {
+            TikNetDiagnosticLog.i('sync', 'subscription share-link converted for catalog merge');
+          }
+        }
+      }
       final merged = mergeTikNetConfigs(subscriptionRaw: subRaw, catalogConfigs: catalogInputs);
       final nodeCount = merged.nodes.length;
 
       if (entitlement.blocksCatalog) {
         await _applyProfileWithoutCatalog(
           includeSub: includeSub,
-          subRaw: subRaw,
+          subRaw: subRawPayload,
           merged: merged,
         );
       } else if (merged.isEmpty) {
         // Fallbacks: raw sub alone, or remote subscription URL.
-        if (includeSub && subRaw != null && subRaw.trim().isNotEmpty) {
-          await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRaw)));
+        if (includeSub && subRawPayload != null && subRawPayload.trim().isNotEmpty) {
+          await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRawPayload)));
           await applyProfileFromCache();
         } else {
           final okRemote = await applyRemoteSubscriptionProfile();
