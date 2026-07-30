@@ -154,9 +154,24 @@ class SyncService {
           await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRawPayload)));
           await applyProfileFromCache();
         } else {
-          final okRemote = await applyRemoteSubscriptionProfile();
-          if (!okRemote && tikNetMode) {
-            TikNetDiagnosticLog.w('sync', 'personal remote profile apply failed — will still try catalog merge');
+          final disk = await _readActiveProfileJson();
+          final diskHasPersonal = disk != null &&
+              mergeTikNetConfigs(subscriptionRaw: disk, catalogConfigs: const [])
+                  .nodes
+                  .any((n) => !n.isCatalog);
+          if (diskHasPersonal) {
+            if (tikNetMode) {
+              TikNetDiagnosticLog.i('sync', 'skip remote personal apply — on-disk profile already has personal nodes');
+            }
+          } else {
+            try {
+              final okRemote = await applyRemoteSubscriptionProfile().timeout(const Duration(seconds: 25));
+              if (!okRemote && tikNetMode) {
+                TikNetDiagnosticLog.w('sync', 'personal remote profile apply failed — will still try catalog merge');
+              }
+            } on TimeoutException {
+              TikNetDiagnosticLog.w('sync', 'personal remote profile apply timed out — continuing to catalog');
+            }
           }
         }
       }
