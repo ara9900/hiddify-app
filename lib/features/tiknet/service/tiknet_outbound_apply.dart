@@ -21,100 +21,121 @@ ConnectionStatus? _connectionStatus(WidgetRef ref) {
   };
 }
 
+Future<void> _abortWrongCatalogExit(WidgetRef ref, {required int catalogId, required String reason}) async {
+  TikNetDiagnosticLog.w('select', reason, {'id': catalogId});
+  try {
+    await ref.read(syncServiceProvider).setSelectedServer(smartSelection());
+  } catch (_) {}
+  try {
+    await ref.read(connectionNotifierProvider.notifier).abortConnection();
+  } catch (e) {
+    TikNetDiagnosticLog.w('select', 'abort after catalog miss failed', {'err': e.toString()});
+  }
+}
+
 /// After profile load / connect, apply smart / proxy / legacy catalog pick via core API.
 Future<void> applyTikNetPersonalOutboundSelection(WidgetRef ref) async {
-  var selection = parseServerSelection(ref.read(Preferences.tikNetSelectedServer));
-  if (_connectionStatus(ref) is! Connected) return;
-  if (!selectionNeedsOutboundApply(selection)) return;
+  try {
+    var selection = parseServerSelection(ref.read(Preferences.tikNetSelectedServer));
+    if (_connectionStatus(ref) is! Connected) return;
+    if (!selectionNeedsOutboundApply(selection)) return;
 
-  final sync = ref.read(syncServiceProvider);
-  final entitlement = sync.currentEntitlement();
-  if (entitlement.blocksCatalog && selectionUsesCatalog(selection)) {
-    await clearTikNetSmartLockWidget(ref);
-    await sync.setSelectedServer(smartSelection());
-    await applyTikNetSmartConnect(ref);
-    return;
-  }
+    final sync = ref.read(syncServiceProvider);
+    final entitlement = sync.currentEntitlement();
+    if (entitlement.blocksCatalog && selectionUsesCatalog(selection)) {
+      await clearTikNetSmartLockWidget(ref);
+      await sync.setSelectedServer(smartSelection());
+      await applyTikNetSmartConnect(ref);
+      return;
+    }
 
-  // Legacy cat:{id} → merged outbound tag (same profile, selectProxy only).
-  if (!selection.isPersonal && selection.catalogId != null) {
-    final catalogId = selection.catalogId!;
-    var nodesState = await ref.read(personalOutboundProvider.future).timeout(
-      const Duration(seconds: 12),
-      onTimeout: () => const TikNetPersonalNodesState(catalog: null, nodePings: {}),
-    );
-    var node = resolveCatalogSelectionToNode(selection, nodesState.catalog);
-    if (node == null) {
-      TikNetDiagnosticLog.w('select', 'catalog node missing — ensuring profile', {'id': catalogId});
-      final ok = await sync.ensureCatalogServerInProfile(catalogId);
-      ref.invalidate(personalOutboundProvider);
-      if (!ok) {
-        TikNetDiagnosticLog.w('select', 'catalog still missing after inject — abort wrong exit', {
-          'id': catalogId,
-        });
-        // Do NOT fall through to Germany/smart: disconnect so the user sees failure.
-        await ref.read(connectionNotifierProvider.notifier).abortConnection();
-        return;
-      }
-      nodesState = await ref.read(personalOutboundProvider.future).timeout(
+    // Legacy cat:{id} → merged outbound tag (same profile, selectProxy only).
+    if (!selection.isPersonal && selection.catalogId != null) {
+      final catalogId = selection.catalogId!;
+      var nodesState = await ref.read(personalOutboundProvider.future).timeout(
         const Duration(seconds: 12),
         onTimeout: () => const TikNetPersonalNodesState(catalog: null, nodePings: {}),
       );
-      node = resolveCatalogSelectionToNode(selection, nodesState.catalog);
+      var node = resolveCatalogSelectionToNode(selection, nodesState.catalog);
       if (node == null) {
-        TikNetDiagnosticLog.w('select', 'catalog meta missing after inject', {'id': catalogId});
+        TikNetDiagnosticLog.w('select', 'catalog node missing — ensuring profile', {'id': catalogId});
+        final ok = await sync.ensureCatalogServerInProfile(catalogId);
+        try {
+          ref.invalidate(personalOutboundProvider);
+        } catch (_) {}
+        if (!ok) {
+          await _abortWrongCatalogExit(
+            ref,
+            catalogId: catalogId,
+            reason: 'catalog still missing after inject — abort wrong exit',
+          );
+          return;
+        }
+        nodesState = await ref.read(personalOutboundProvider.future).timeout(
+          const Duration(seconds: 12),
+          onTimeout: () => const TikNetPersonalNodesState(catalog: null, nodePings: {}),
+        );
+        node = resolveCatalogSelectionToNode(selection, nodesState.catalog);
+        if (node == null) {
+          await _abortWrongCatalogExit(
+            ref,
+            catalogId: catalogId,
+            reason: 'catalog meta missing after inject',
+          );
+          return;
+        }
+      }
+      selection = (
+        isPersonal: true,
+        catalogId: null,
+        personalKind: TikNetPersonalPickKind.proxy,
+        personalTag: node.tag,
+        personalGroupTag: node.groupTag,
+      );
+    }
+
+    if (!selection.isPersonal || selection.catalogId != null) return;
+
+    if (selectionIsSmart(selection)) {
+      await applyTikNetSmartConnect(ref);
+      return;
+    }
+
+    final groupTag = (selection.personalGroupTag ?? '').trim();
+    final outboundTag = (selection.personalTag ?? '').trim();
+    if (outboundTag.isEmpty) return;
+    if (entitlement.blocksCatalog && isTikNetCatalogOutboundTag(outboundTag)) {
+      await clearTikNetSmartLockWidget(ref);
+      await sync.setSelectedServer(smartSelection());
+      await applyTikNetSmartConnect(ref);
+      return;
+    }
+
+    // Manual pick: clear any smart session lock.
+    await clearTikNetSmartLockWidget(ref);
+
+    final applied = await selectOutboundInCore(
+      ref.read(proxyRepositoryProvider),
+      outboundTag: outboundTag,
+      preferredGroupTag: groupTag,
+      reason: 'manual-pick',
+    );
+    if (!applied) {
+      TikNetDiagnosticLog.w('select', 'manual outbound rejected by core', {
+        'tag': outboundTag,
+        'group': groupTag,
+      });
+      // Catalog manual picks must not silently land on another country.
+      if (isTikNetCatalogOutboundTag(outboundTag)) {
         await ref.read(connectionNotifierProvider.notifier).abortConnection();
         return;
       }
+      await ensureSafeDefaultOutbound(
+        ref.read(proxyRepositoryProvider),
+        reason: 'manual-pick-rejected',
+      );
     }
-    selection = (
-      isPersonal: true,
-      catalogId: null,
-      personalKind: TikNetPersonalPickKind.proxy,
-      personalTag: node.tag,
-      personalGroupTag: node.groupTag,
-    );
-  }
-
-  if (!selection.isPersonal || selection.catalogId != null) return;
-
-  if (selectionIsSmart(selection)) {
-    await applyTikNetSmartConnect(ref);
-    return;
-  }
-
-  final groupTag = (selection.personalGroupTag ?? '').trim();
-  final outboundTag = (selection.personalTag ?? '').trim();
-  if (outboundTag.isEmpty) return;
-  if (entitlement.blocksCatalog && isTikNetCatalogOutboundTag(outboundTag)) {
-    await clearTikNetSmartLockWidget(ref);
-    await sync.setSelectedServer(smartSelection());
-    await applyTikNetSmartConnect(ref);
-    return;
-  }
-
-  // Manual pick: clear any smart session lock.
-  await clearTikNetSmartLockWidget(ref);
-
-  final applied = await selectOutboundInCore(
-    ref.read(proxyRepositoryProvider),
-    outboundTag: outboundTag,
-    preferredGroupTag: groupTag,
-    reason: 'manual-pick',
-  );
-  if (!applied) {
-    TikNetDiagnosticLog.w('select', 'manual outbound rejected by core', {
-      'tag': outboundTag,
-      'group': groupTag,
-    });
-    // Catalog manual picks must not silently land on another country.
-    if (isTikNetCatalogOutboundTag(outboundTag)) {
-      await ref.read(connectionNotifierProvider.notifier).abortConnection();
-      return;
-    }
-    await ensureSafeDefaultOutbound(
-      ref.read(proxyRepositoryProvider),
-      reason: 'manual-pick-rejected',
-    );
+  } catch (e) {
+    TikNetDiagnosticLog.e('select', 'apply outbound selection failed', {'err': e.toString()});
   }
 }

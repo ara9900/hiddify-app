@@ -132,6 +132,19 @@ class SyncService {
             'ids': catalogServers.map((s) => s.id).take(12).toList(),
           });
         }
+        // Stale cat:{id} (removed from panel) must not stay selected — otherwise connect
+        // shows catalog UI while traffic exits via a personal node.
+        final sel = selectedServer;
+        if (selectionUsesCatalog(sel) && !entitlement.blocksCatalog) {
+          final id = sel.catalogId ?? catalogIdFromOutboundTag(sel.personalTag);
+          if (id != null && id > 0 && !catalogServers.any((s) => s.id == id)) {
+            TikNetDiagnosticLog.w('sync', 'reset stale catalog selection', {
+              'id': id,
+              'accessible': catalogServers.map((s) => s.id).take(12).toList(),
+            });
+            await setSelectedServer(smartSelection());
+          }
+        }
       } catch (e) {
         if (tikNetMode) {
           TikNetDiagnosticLog.w('sync', 'catalog list fetch failed', {'err': e.toString()});
