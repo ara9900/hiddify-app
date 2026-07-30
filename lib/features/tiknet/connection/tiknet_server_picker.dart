@@ -11,6 +11,7 @@ import 'package:hiddify/features/tiknet/service/server_catalog_provider.dart';
 import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_node_pings_notifier.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_outbound_apply.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_country_flag.dart';
@@ -352,6 +353,11 @@ class TikNetServerPickerSheet extends ConsumerWidget {
           behavior: SnackBarBehavior.floating,
         ),
       );
+      // While VPN is already up, profile rewrite alone does not change the live
+      // outbound — select it now or traffic stays on the previous country.
+      if (ok && ref.read(connectionNotifierProvider).valueOrNull is Connected) {
+        await applyTikNetPersonalOutboundSelection(ref);
+      }
     } on SyncTokenExpiredException {
       if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
     }
