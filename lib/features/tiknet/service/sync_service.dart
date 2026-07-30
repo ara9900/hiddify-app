@@ -43,6 +43,8 @@ class SyncService {
   SyncService(this._ref);
   final Ref _ref;
 
+  Future<bool>? _syncInFlight;
+
   /// Fetches profile + config from panel, caches them, imports config into Hiddify profile.
   Future<bool> syncAllAndApplyProfile() async {
     final synced = await syncAll();
@@ -51,7 +53,13 @@ class SyncService {
   }
 
   /// Fetches profile, aggregated subscription, catalog configs → one merged profile.
-  Future<bool> syncAll() async {
+  Future<bool> syncAll() {
+    // Concurrent syncAll (session guard + UI) raced the convert gate and deadlocked
+    // cold-start validateConfig. Coalesce to one in-flight sync.
+    return _syncInFlight ??= _syncAllBody().whenComplete(() => _syncInFlight = null);
+  }
+
+  Future<bool> _syncAllBody() async {
     final auth = _ref.read(authServiceProvider);
     if (!auth.hasAppSession()) return false;
 
@@ -130,15 +138,7 @@ class SyncService {
       }
 
       final includeSub = displayMode != TikNetServerDisplayMode.catalogOnly;
-      final catalogInputs = <TikNetCatalogConfigInput>[];
-      if (catalogServers.isNotEmpty) {
-        catalogInputs.addAll(await _fetchCatalogConfigsParallel(api, baseUrl: baseUrl, token: token, servers: catalogServers));
-      }
-
       final rawSub = includeSub && subBytes.isNotEmpty ? utf8.decode(subBytes, allowMalformed: true) : null;
-      // The subscription doubles as the v2rayNG / v2box link, so it carries the
-      // plan and traffic banners as fake outbounds. Drop them before anything
-      // reaches the core, including the raw-payload fallback below.
       final sanitized = rawSub == null ? null : sanitizeSubscriptionPayload(rawSub);
       if (tikNetMode && sanitized != null && sanitized.changed) {
         TikNetDiagnosticLog.i('sync', 'dropped info entries from subscription', {
@@ -147,8 +147,25 @@ class SyncService {
         });
       }
       final subRawPayload = sanitized?.payload;
-      // Share-link subs must become JSON before catalog merge, otherwise personal
-      // nodes disappear. Never block forever on core validate during cold start.
+
+      // Apply personal first so cold start is not blocked on catalog share-link convert.
+      if (includeSub && subRawPayload != null && subRawPayload.trim().isNotEmpty) {
+        if (subRawPayload.trim().startsWith('{')) {
+          await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRawPayload)));
+          await applyProfileFromCache();
+        } else {
+          final okRemote = await applyRemoteSubscriptionProfile();
+          if (!okRemote && tikNetMode) {
+            TikNetDiagnosticLog.w('sync', 'personal remote profile apply failed — will still try catalog merge');
+          }
+        }
+      }
+
+      final catalogInputs = <TikNetCatalogConfigInput>[];
+      if (catalogServers.isNotEmpty) {
+        catalogInputs.addAll(await _fetchCatalogConfigsParallel(api, baseUrl: baseUrl, token: token, servers: catalogServers));
+      }
+
       final subRaw = catalogInputs.isEmpty
           ? subRawPayload
           : await _resolveSubscriptionJsonForMerge(subRawPayload);
@@ -162,14 +179,12 @@ class SyncService {
           merged: merged,
         );
       } else if (merged.isEmpty) {
-        // Avoid applying raw share-links here — core validate can hang while gRPC is down.
-        // Prefer remote URL fetch, else keep whatever profile is already on disk.
         final okRemote = await applyRemoteSubscriptionProfile();
         if (!okRemote && includeSub && subRawPayload != null && subRawPayload.trim().startsWith('{')) {
           await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRawPayload)));
           await applyProfileFromCache();
         } else if (!okRemote && tikNetMode) {
-          TikNetDiagnosticLog.w('sync', 'merge empty — kept previous profile (share-link apply skipped)');
+          TikNetDiagnosticLog.w('sync', 'merge empty - kept previous profile (share-link apply skipped)');
         }
       } else {
         final mergedBytes = utf8.encode(merged.configJson);
@@ -554,16 +569,20 @@ class SyncService {
   /// Matches [ProfileRepository.addLocal]: write source to `*.tmp`, validate writes
   /// the converted JSON to the main path. Each attempt is hard-timed-out so sync
   /// cannot hang forever when gRPC is refused during startup.
-  Future<String?> _convertPanelConfigToSingboxJson(List<int> bytes) {
-    final done = Completer<String?>();
-    _convertGate = _convertGate.then((_) async {
+  Future<String?> _convertPanelConfigToSingboxJson(List<int> bytes) async {
+    // Assign the next gate slot BEFORE awaiting the previous one so concurrent
+    // callers cannot both attach to the same prior future (classic mutex race).
+    final prior = _convertGate;
+    final slot = Completer<void>();
+    _convertGate = slot.future;
+    try {
       try {
-        done.complete(await _convertPanelConfigToSingboxJsonUnlocked(bytes));
-      } catch (e, st) {
-        done.completeError(e, st);
-      }
-    });
-    return done.future;
+        await prior;
+      } catch (_) {}
+      return await _convertPanelConfigToSingboxJsonUnlocked(bytes);
+    } finally {
+      if (!slot.isCompleted) slot.complete();
+    }
   }
 
   Future<String?> _convertPanelConfigToSingboxJsonUnlocked(List<int> bytes) async {

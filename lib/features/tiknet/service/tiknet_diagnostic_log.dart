@@ -48,9 +48,9 @@ class TikNetDiagnosticLog {
     developer.log(line, name: _logcatTag, level: level == 'E' ? 1000 : 800);
     final file = _file;
     if (file != null) {
-      unawaited(
-        file.writeAsString('$line\n', mode: FileMode.append).catchError((_) {}),
-      );
+      try {
+        file.writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+      } catch (_) {}
     }
   }
 

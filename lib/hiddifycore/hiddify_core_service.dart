@@ -90,12 +90,24 @@ class HiddifyCoreService with InfraLogger {
   TaskEither<String, Unit> validateConfigByPath(String path, String tempPath, bool debug) {
     return TaskEither(() async {
       try {
-        final response = await core.fgClient.parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false));
+        final response = await core.fgClient
+            .parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false))
+            .timeout(const Duration(seconds: 8));
         if (response.responseCode != ResponseCode.OK) return left("${response.responseCode} ${response.message}");
       } catch (e) {
-        await setup().run();
-        final response = await core.fgClient.parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false));
-        if (response.responseCode != ResponseCode.OK) return left("${response.responseCode} ${response.message}");
+        try {
+          await setup().run().timeout(const Duration(seconds: 12));
+        } on Object catch (setupErr) {
+          return left("core setup unavailable: $setupErr (cause: $e)");
+        }
+        try {
+          final response = await core.fgClient
+              .parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false))
+              .timeout(const Duration(seconds: 8));
+          if (response.responseCode != ResponseCode.OK) return left("${response.responseCode} ${response.message}");
+        } on Object catch (parseErr) {
+          return left("parse unavailable: $parseErr");
+        }
       }
       return right(unit);
     });
