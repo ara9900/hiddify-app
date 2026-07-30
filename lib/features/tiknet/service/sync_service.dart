@@ -642,7 +642,7 @@ class SyncService {
             .timeout(const Duration(seconds: 15));
         if (setupResult.isLeft()) {
           TikNetDiagnosticLog.w('sync', 'core setup before convert failed', {
-            'err': setupResult.swap().toNullable()?.toString() ?? 'unknown',
+            'err': setupResult.fold((l) => l.toString(), (_) => 'unknown'),
           });
         }
       } on Object catch (e) {
