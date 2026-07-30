@@ -147,21 +147,11 @@ class SyncService {
         });
       }
       final subRawPayload = sanitized?.payload;
-      // Subscription is often share-links; convert to JSON before merging catalog so
-      // personal nodes are not dropped when catalog convert succeeds.
-      String? subRaw = subRawPayload;
-      if (subRaw != null &&
-          subRaw.trim().isNotEmpty &&
-          !subRaw.trim().startsWith('{') &&
-          catalogInputs.isNotEmpty) {
-        final convertedSub = await _convertPanelConfigToSingboxJson(utf8.encode(subRaw));
-        if (convertedSub != null && convertedSub.trim().startsWith('{')) {
-          subRaw = convertedSub;
-          if (tikNetMode) {
-            TikNetDiagnosticLog.i('sync', 'subscription share-link converted for catalog merge');
-          }
-        }
-      }
+      // Share-link subs must become JSON before catalog merge, otherwise personal
+      // nodes disappear. Never block forever on core validate during cold start.
+      final subRaw = catalogInputs.isEmpty
+          ? subRawPayload
+          : await _resolveSubscriptionJsonForMerge(subRawPayload);
       final merged = mergeTikNetConfigs(subscriptionRaw: subRaw, catalogConfigs: catalogInputs);
       final nodeCount = merged.nodes.length;
 
@@ -172,13 +162,14 @@ class SyncService {
           merged: merged,
         );
       } else if (merged.isEmpty) {
-        // Fallbacks: raw sub alone, or remote subscription URL.
-        if (includeSub && subRawPayload != null && subRawPayload.trim().isNotEmpty) {
+        // Avoid applying raw share-links here — core validate can hang while gRPC is down.
+        // Prefer remote URL fetch, else keep whatever profile is already on disk.
+        final okRemote = await applyRemoteSubscriptionProfile();
+        if (!okRemote && includeSub && subRawPayload != null && subRawPayload.trim().startsWith('{')) {
           await _ref.read(Preferences.tikNetCachedConfig.notifier).update(base64Encode(utf8.encode(subRawPayload)));
           await applyProfileFromCache();
-        } else {
-          final okRemote = await applyRemoteSubscriptionProfile();
-          if (!okRemote) return false;
+        } else if (!okRemote && tikNetMode) {
+          TikNetDiagnosticLog.w('sync', 'merge empty — kept previous profile (share-link apply skipped)');
         }
       } else {
         final mergedBytes = utf8.encode(merged.configJson);
@@ -237,10 +228,12 @@ class SyncService {
     required String token,
     required List<TikNetServerEntry> servers,
   }) async {
-    const concurrency = 4;
-    final out = <TikNetCatalogConfigInput>[];
-    for (var i = 0; i < servers.length; i += concurrency) {
-      final chunk = servers.skip(i).take(concurrency).toList();
+    // Fetch in parallel, but normalize/convert serially — concurrent validateConfig
+    // against a cold core hangs and never returns.
+    const fetchConcurrency = 4;
+    final fetched = <({TikNetServerEntry server, List<int> bytes})>[];
+    for (var i = 0; i < servers.length; i += fetchConcurrency) {
+      final chunk = servers.skip(i).take(fetchConcurrency).toList();
       final results = await Future.wait(
         chunk.map((s) async {
           try {
@@ -253,9 +246,7 @@ class SyncService {
               }
               return null;
             }
-            final normalized = await _normalizeCatalogConfigBytes(bytes, catalogId: s.id, name: s.name);
-            if (normalized == null) return null;
-            return TikNetCatalogConfigInput(server: s, configBytes: normalized);
+            return (server: s, bytes: bytes);
           } catch (e) {
             if (tikNetMode) {
               TikNetDiagnosticLog.w('sync', 'catalog config fetch failed', {
@@ -269,10 +260,82 @@ class SyncService {
         }),
       );
       for (final r in results) {
-        if (r != null) out.add(r);
+        if (r != null) fetched.add(r);
+      }
+    }
+
+    final out = <TikNetCatalogConfigInput>[];
+    for (final item in fetched) {
+      final normalized = await _normalizeCatalogConfigBytes(
+        item.bytes,
+        catalogId: item.server.id,
+        name: item.server.name,
+      );
+      if (normalized != null) {
+        out.add(TikNetCatalogConfigInput(server: item.server, configBytes: normalized));
       }
     }
     return out;
+  }
+
+  /// Prefer JSON subscription (or on-disk profile) so catalog merge keeps personal nodes.
+  Future<String?> _resolveSubscriptionJsonForMerge(String? subRawPayload) async {
+    final trimmed = subRawPayload?.trim() ?? '';
+    if (trimmed.startsWith('{')) return trimmed;
+
+    if (trimmed.isNotEmpty) {
+      final converted = await _convertPanelConfigToSingboxJson(utf8.encode(trimmed));
+      if (converted != null && converted.trim().startsWith('{')) {
+        if (tikNetMode) {
+          TikNetDiagnosticLog.i('sync', 'subscription share-link converted for catalog merge');
+        }
+        return converted;
+      }
+    }
+
+    final cached = getConfigs().trim();
+    if (cached.startsWith('{')) {
+      final personal = mergeTikNetConfigs(subscriptionRaw: cached, catalogConfigs: const []);
+      if (personal.nodes.any((n) => !n.isCatalog)) {
+        if (tikNetMode) {
+          TikNetDiagnosticLog.i('sync', 'using cached JSON subscription base for catalog merge', {
+            'personal_nodes': personal.nodes.where((n) => !n.isCatalog).length,
+          });
+        }
+        return cached;
+      }
+    }
+
+    final fromDisk = await _readActiveProfileJson();
+    if (fromDisk != null) {
+      final personal = mergeTikNetConfigs(subscriptionRaw: fromDisk, catalogConfigs: const []);
+      if (personal.nodes.any((n) => !n.isCatalog)) {
+        if (tikNetMode) {
+          TikNetDiagnosticLog.i('sync', 'using on-disk profile as subscription base for catalog merge', {
+            'personal_nodes': personal.nodes.where((n) => !n.isCatalog).length,
+          });
+        }
+        return fromDisk;
+      }
+    }
+
+    if (tikNetMode && trimmed.isNotEmpty) {
+      TikNetDiagnosticLog.w('sync', 'subscription still share-link — catalog merge may be catalog-only');
+    }
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  Future<String?> _readActiveProfileJson() async {
+    try {
+      final id = _ref.read(Preferences.tikNetProfileId).trim();
+      if (id.isEmpty) return null;
+      final file = _ref.read(profilePathResolverProvider).file(id);
+      if (!file.existsSync()) return null;
+      final text = file.readAsStringSync().trim();
+      return text.startsWith('{') ? text : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Panel may ship catalog configs as share-links (`vless://…`). Convert to sing-box JSON.
@@ -423,8 +486,7 @@ class SyncService {
     if (normalized == null) return false;
     configBytes = normalized;
 
-    // Prefer a JSON subscription base when available; share-link cache still works as
-    // catalog-only merge base (subscriptionRaw ignored when not JSON).
+    // Prefer a JSON subscription base when available.
     var subRaw = getConfigs();
     if (subRaw.trim().isEmpty) {
       try {
@@ -436,6 +498,9 @@ class SyncService {
     } else {
       final sanitized = sanitizeSubscriptionPayload(subRaw);
       subRaw = sanitized.payload;
+    }
+    if (subRaw.trim().isNotEmpty && !subRaw.trim().startsWith('{')) {
+      subRaw = (await _resolveSubscriptionJsonForMerge(subRaw)) ?? subRaw;
     }
 
     final merged = mergeTikNetConfigs(
@@ -481,11 +546,27 @@ class SyncService {
     return merged.nodes.where((n) => n.catalogId == catalogId).length;
   }
 
+  /// Serialize converts — parallel validateConfig calls deadlock a cold core.
+  Future<void> _convertGate = Future<void>.value();
+
   /// Convert share-link / non-JSON panel payloads to sing-box JSON via core validate.
   ///
   /// Matches [ProfileRepository.addLocal]: write source to `*.tmp`, validate writes
-  /// the converted JSON to the main path.
-  Future<String?> _convertPanelConfigToSingboxJson(List<int> bytes) async {
+  /// the converted JSON to the main path. Each attempt is hard-timed-out so sync
+  /// cannot hang forever when gRPC is refused during startup.
+  Future<String?> _convertPanelConfigToSingboxJson(List<int> bytes) {
+    final done = Completer<String?>();
+    _convertGate = _convertGate.then((_) async {
+      try {
+        done.complete(await _convertPanelConfigToSingboxJsonUnlocked(bytes));
+      } catch (e, st) {
+        done.completeError(e, st);
+      }
+    });
+    return done.future;
+  }
+
+  Future<String?> _convertPanelConfigToSingboxJsonUnlocked(List<int> bytes) async {
     var text = utf8.decode(bytes, allowMalformed: true).trim();
     if (text.isEmpty) return null;
     if (text.startsWith('{')) return text;
@@ -509,22 +590,30 @@ class SyncService {
       Object? lastErr;
       for (var attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) await Future<void>.delayed(Duration(seconds: 2 * attempt));
-        final result = await repo.validateConfig(file.path, temp.path, null, false).run();
-        final out = result.fold<(String?, Object?)>((l) => (null, l), (_) {
-          if (!file.existsSync()) return (null, 'converted file missing');
-          final json = file.readAsStringSync().trim();
-          return (json.isEmpty ? null : json, json.isEmpty ? 'empty convert output' : null);
-        });
-        if (out.$1 != null && out.$1!.startsWith('{')) {
-          try {
-            file.deleteSync();
-          } catch (_) {}
-          try {
-            temp.deleteSync();
-          } catch (_) {}
-          return out.$1;
+        try {
+          final result = await repo
+              .validateConfig(file.path, temp.path, null, false)
+              .run()
+              .timeout(const Duration(seconds: 12));
+          final out = result.fold<(String?, Object?)>((l) => (null, l), (_) {
+            if (!file.existsSync()) return (null, 'converted file missing');
+            final json = file.readAsStringSync().trim();
+            return (json.isEmpty ? null : json, json.isEmpty ? 'empty convert output' : null);
+          });
+          if (out.$1 != null && out.$1!.startsWith('{')) {
+            try {
+              file.deleteSync();
+            } catch (_) {}
+            try {
+              temp.deleteSync();
+            } catch (_) {}
+            return out.$1;
+          }
+          lastErr = out.$2 ?? lastErr;
+        } on TimeoutException {
+          lastErr = 'validateConfig timed out';
+          TikNetDiagnosticLog.w('sync', 'catalog convert timed out', {'attempt': attempt + 1});
         }
-        lastErr = out.$2 ?? lastErr;
       }
       TikNetDiagnosticLog.w('sync', 'catalog convert failed', {
         'err': lastErr?.toString() ?? 'unknown',
@@ -692,14 +781,25 @@ class SyncService {
     }
 
     if (existing != null) {
-      final result = await repo
-          .offlineUpdate(existing.copyWith(userOverride: userOverride), content)
-          .run();
-      if (result.isLeft()) return false;
+      try {
+        final result = await repo
+            .offlineUpdate(existing.copyWith(userOverride: userOverride), content)
+            .run()
+            .timeout(const Duration(seconds: 20));
+        if (result.isLeft()) return false;
+      } on TimeoutException {
+        TikNetDiagnosticLog.w('sync', 'profile offlineUpdate timed out');
+        return false;
+      }
     } else {
-      final result = await repo.addLocal(content, userOverride: userOverride).run();
-      if (result.isLeft()) return false;
-      existing = await _findTikNetProfile(repo);
+      try {
+        final result = await repo.addLocal(content, userOverride: userOverride).run().timeout(const Duration(seconds: 20));
+        if (result.isLeft()) return false;
+        existing = await _findTikNetProfile(repo);
+      } on TimeoutException {
+        TikNetDiagnosticLog.w('sync', 'profile addLocal timed out');
+        return false;
+      }
     }
 
     final profileId = existing?.id;
