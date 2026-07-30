@@ -113,9 +113,8 @@ class SyncService {
       // reaches the core, including the raw-payload fallback below.
       final sanitized = rawSub == null ? null : sanitizeSubscriptionPayload(rawSub);
       if (tikNetMode && sanitized != null && sanitized.changed) {
-        TikNetDiagnosticLog.i('sync', 'sanitized subscription for core', {
-          'dropped_info': sanitized.droppedLabels.length,
-          'forced_xray': sanitized.forcedXrayCount,
+        TikNetDiagnosticLog.i('sync', 'dropped info entries from subscription', {
+          'count': sanitized.droppedLabels.length,
           'labels': sanitized.droppedLabels.take(6).toList(),
         });
       }

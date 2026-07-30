@@ -1,7 +1,7 @@
 name: hiddify
 description: TikNet VPN - Multi Platform Proxy Client.
 publish_to: "none"
-version: 4.2.53+40253
+version: 4.2.54+40254
 
 environment:
   sdk: ^3.10.4
