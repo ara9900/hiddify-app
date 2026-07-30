@@ -28,6 +28,7 @@ import 'package:hiddify/features/tiknet/service/tiknet_subscription_sanitizer.da
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_ping_settings.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_panel_server_display.dart';
+import 'package:hiddify/utils/link_parsers.dart';
 
 /// Thrown when sync fails due to 401 (token expired). Caller should redirect to login.
 class SyncTokenExpiredException implements Exception {
@@ -237,7 +238,9 @@ class SyncService {
               }
               return null;
             }
-            return TikNetCatalogConfigInput(server: s, configBytes: bytes);
+            final normalized = await _normalizeCatalogConfigBytes(bytes, catalogId: s.id, name: s.name);
+            if (normalized == null) return null;
+            return TikNetCatalogConfigInput(server: s, configBytes: normalized);
           } catch (e) {
             if (tikNetMode) {
               TikNetDiagnosticLog.w('sync', 'catalog config fetch failed', {
@@ -255,6 +258,37 @@ class SyncService {
       }
     }
     return out;
+  }
+
+  /// Panel may ship catalog configs as share-links (`vless://…`). Convert to sing-box JSON.
+  Future<List<int>?> _normalizeCatalogConfigBytes(
+    List<int> bytes, {
+    required int catalogId,
+    required String name,
+  }) async {
+    if (_peekCatalogExtractCount(bytes, catalogId: catalogId, name: name) > 0) {
+      return bytes;
+    }
+    final converted = await _convertPanelConfigToSingboxJson(bytes);
+    if (converted == null || converted.trim().isEmpty) {
+      TikNetDiagnosticLog.w('sync', 'catalog config not parseable as outbounds', {
+        'id': catalogId,
+        'name': name,
+        'bytes': bytes.length,
+        'head': utf8.decode(bytes.take(80).toList(), allowMalformed: true),
+      });
+      return null;
+    }
+    final convertedBytes = utf8.encode(converted);
+    if (_peekCatalogExtractCount(convertedBytes, catalogId: catalogId, name: name) <= 0) {
+      TikNetDiagnosticLog.w('sync', 'catalog convert produced no selectable outbounds', {
+        'id': catalogId,
+        'name': name,
+      });
+      return null;
+    }
+    TikNetDiagnosticLog.i('sync', 'catalog share-link converted', {'id': catalogId, 'name': name});
+    return convertedBytes;
   }
 
   /// Ensure merged profile is active; outbound pick happens after connect.
@@ -370,22 +404,9 @@ class SyncService {
     }
 
     var configBytes = bytes;
-    var extracted = _peekCatalogExtractCount(configBytes, catalogId: catalogId, name: server.name);
-    if (extracted == 0) {
-      final converted = await _convertPanelConfigToSingboxJson(bytes);
-      if (converted != null && converted.trim().isNotEmpty) {
-        configBytes = utf8.encode(converted);
-        extracted = _peekCatalogExtractCount(configBytes, catalogId: catalogId, name: server.name);
-      }
-    }
-    if (extracted == 0) {
-      TikNetDiagnosticLog.w('sync', 'catalog config not parseable as outbounds', {
-        'id': catalogId,
-        'bytes': bytes.length,
-        'head': utf8.decode(bytes.take(80).toList(), allowMalformed: true),
-      });
-      return false;
-    }
+    final normalized = await _normalizeCatalogConfigBytes(bytes, catalogId: catalogId, name: server.name);
+    if (normalized == null) return false;
+    configBytes = normalized;
 
     // Prefer a JSON subscription base when available; share-link cache still works as
     // catalog-only merge base (subscriptionRaw ignored when not JSON).
@@ -446,30 +467,61 @@ class SyncService {
   }
 
   /// Convert share-link / non-JSON panel payloads to sing-box JSON via core validate.
+  ///
+  /// Matches [ProfileRepository.addLocal]: write source to `*.tmp`, validate writes
+  /// the converted JSON to the main path.
   Future<String?> _convertPanelConfigToSingboxJson(List<int> bytes) async {
-    final text = utf8.decode(bytes, allowMalformed: true).trim();
+    var text = utf8.decode(bytes, allowMalformed: true).trim();
     if (text.isEmpty) return null;
     if (text.startsWith('{')) return text;
+    if (!text.contains('://')) {
+      final decoded = safeDecodeBase64(text).trim();
+      if (decoded.startsWith('{') || decoded.contains('://')) text = decoded;
+    }
+    if (text.startsWith('{')) return text;
+
     try {
       final repo = await _ref.read(profileRepositoryProvider.future);
       final paths = _ref.read(profilePathResolverProvider);
-      const convertId = 'tiknet-catalog-convert';
+      final convertId = 'tiknet-cat-convert-${DateTime.now().microsecondsSinceEpoch}';
       final file = paths.file(convertId);
       final temp = paths.tempFile(convertId);
-      await file.writeAsString(text);
+      await file.parent.create(recursive: true);
+      if (file.existsSync()) file.deleteSync();
       if (temp.existsSync()) temp.deleteSync();
-      final result = await repo.validateConfig(file.path, temp.path, null, false).run();
+      await temp.writeAsString(text);
+
+      Object? lastErr;
+      for (var attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await Future<void>.delayed(Duration(seconds: 2 * attempt));
+        final result = await repo.validateConfig(file.path, temp.path, null, false).run();
+        final out = result.fold<(String?, Object?)>((l) => (null, l), (_) {
+          if (!file.existsSync()) return (null, 'converted file missing');
+          final json = file.readAsStringSync().trim();
+          return (json.isEmpty ? null : json, json.isEmpty ? 'empty convert output' : null);
+        });
+        if (out.$1 != null && out.$1!.startsWith('{')) {
+          try {
+            file.deleteSync();
+          } catch (_) {}
+          try {
+            temp.deleteSync();
+          } catch (_) {}
+          return out.$1;
+        }
+        lastErr = out.$2 ?? lastErr;
+      }
+      TikNetDiagnosticLog.w('sync', 'catalog convert failed', {
+        'err': lastErr?.toString() ?? 'unknown',
+        'head': text.length > 80 ? text.substring(0, 80) : text,
+      });
       try {
         file.deleteSync();
       } catch (_) {}
-      return result.fold((_) => null, (_) {
-        if (!temp.existsSync()) return null;
-        final out = temp.readAsStringSync();
-        try {
-          temp.deleteSync();
-        } catch (_) {}
-        return out.trim().isEmpty ? null : out;
-      });
+      try {
+        temp.deleteSync();
+      } catch (_) {}
+      return null;
     } catch (e) {
       TikNetDiagnosticLog.w('sync', 'catalog convert failed', {'err': e.toString()});
       return null;
