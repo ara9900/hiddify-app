@@ -32,21 +32,29 @@ class TikNetSanitizedSubscription {
   const TikNetSanitizedSubscription({
     required this.payload,
     required this.droppedLabels,
+    this.forcedXrayCount = 0,
   });
 
   final String payload;
   final List<String> droppedLabels;
+  final int forcedXrayCount;
 
-  bool get changed => droppedLabels.isNotEmpty;
+  bool get changed => droppedLabels.isNotEmpty || forcedXrayCount > 0;
 }
 
-/// Strips display-only "info" entries from a share-link subscription.
+/// Strips display-only "info" entries from a share-link subscription and forces
+/// Reality links through ray2sing's Xray converter (`&core=xray`).
 ///
 /// The panel keeps plan / traffic / expiry banners in the subscription so
 /// v2rayNG and v2box can show them in their server lists. Our app reads those
 /// numbers from the panel API, and the core would otherwise treat each banner
 /// as a real proxy: it joins the balancer, wins urltest with a fake 0 ms and
 /// then refuses every connection.
+///
+/// Reality links that work in v2rayNG need Xray's spiderX mapping. Stock
+/// sing-box conversion drops `spx`; appending `core=xray` makes the patched
+/// ray2sing take the Xray path even when the preference flag is not threaded
+/// into the converter.
 ///
 /// The payload shape is preserved (base64 stays base64) and the original text
 /// is returned untouched whenever sanitising would leave no servers behind.
@@ -65,6 +73,7 @@ TikNetSanitizedSubscription sanitizeSubscriptionPayload(String raw) {
   final kept = <String>[];
   final dropped = <String>[];
   var serverCount = 0;
+  var forcedXray = 0;
 
   for (final line in const LineSplitter().convert(body)) {
     final entry = line.trim();
@@ -76,10 +85,12 @@ TikNetSanitizedSubscription sanitizeSubscriptionPayload(String raw) {
       continue;
     }
     if (entry.contains('://')) serverCount++;
-    kept.add(entry);
+    final rewritten = _forceXrayCoreForReality(entry);
+    if (rewritten != entry) forcedXray++;
+    kept.add(rewritten);
   }
 
-  if (dropped.isEmpty || serverCount == 0) {
+  if ((dropped.isEmpty && forcedXray == 0) || serverCount == 0) {
     return TikNetSanitizedSubscription(payload: raw, droppedLabels: const []);
   }
 
@@ -87,7 +98,25 @@ TikNetSanitizedSubscription sanitizeSubscriptionPayload(String raw) {
   return TikNetSanitizedSubscription(
     payload: decoded == null ? joined : base64Encode(utf8.encode(joined)),
     droppedLabels: dropped,
+    forcedXrayCount: forcedXray,
   );
+}
+
+/// Appends `core=xray` to Reality VLESS/Trojan share links so ray2sing maps
+/// spiderX the same way v2rayNG's Xray core does.
+String _forceXrayCoreForReality(String entry) {
+  final uri = Uri.tryParse(entry);
+  if (uri == null || !uri.hasScheme) return entry;
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'vless' && scheme != 'trojan') return entry;
+
+  final params = Map<String, String>.from(uri.queryParameters);
+  final security = (params['security'] ?? '').toLowerCase();
+  if (security != 'reality') return entry;
+  if ((params['core'] ?? '').toLowerCase() == 'xray') return entry;
+
+  params['core'] = 'xray';
+  return uri.replace(queryParameters: params).toString();
 }
 
 /// Returns the entry name when [entry] is a display-only banner, else null.
