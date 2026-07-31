@@ -57,10 +57,11 @@ abstract class ConfigOptions {
     mapTo: (value) => value.key,
   );
 
-  /// TikNet: UDP, not TCP. Remote DNS runs through the proxy, and a TCP resolver
-  /// pays a fresh handshake per query — on the device that produced 10–13s
-  /// "cache wait timeout" stalls on first page loads.
-  static const tikNetDefaultRemoteDns = "udp://1.1.1.1";
+  /// TikNet: DoH through the proxy. Plain UDP DNS over Shadowsocks (common on
+  /// catalog SS/443) often stalls or blackholes browser lookups while TCP still
+  /// works — matching "v2rayNG fast, TikNet dead". TCP remote DNS was worse
+  /// (handshake-per-query stalls); DoH reuses one TLS session.
+  static const tikNetDefaultRemoteDns = "https://1.1.1.1/dns-query";
 
   static final remoteDnsAddress = PreferencesNotifier.create<String, String>(
     "remote-dns-address",
@@ -141,7 +142,12 @@ abstract class ConfigOptions {
     mapTo: (value) => value.name,
   );
 
-  static final mtu = PreferencesNotifier.create<int, int>("mtu", 9000);
+  /// TikNet: 9000 breaks many Android VPN paths (no reliable PMTUD with gvisor).
+  /// v2rayNG-style stacks use ~1500; mixed-port never sees this, only TUN apps.
+  static final mtu = PreferencesNotifier.create<int, int>(
+    "mtu",
+    tikNetMode ? 1500 : 9000,
+  );
 
   static final strictRoute = PreferencesNotifier.create<bool, bool>("strict-route", true);
 

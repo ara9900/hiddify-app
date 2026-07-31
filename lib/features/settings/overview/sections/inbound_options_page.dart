@@ -41,6 +41,18 @@ class InboundOptionsPage extends HookConsumerWidget {
             presentChoice: (value) => value.name,
           ),
           ValuePreferenceWidget(
+            value: ref.watch(ConfigOptions.mtu),
+            preferences: ref.watch(ConfigOptions.mtu.notifier),
+            title: 'MTU',
+            icon: Icons.straighten_rounded,
+            inputToValue: int.tryParse,
+            digitsOnly: true,
+            validateInput: (value) {
+              final n = int.tryParse(value);
+              return n != null && n >= 1280 && n <= 9000;
+            },
+          ),
+          ValuePreferenceWidget(
             value: ref.watch(ConfigOptions.mixedPort),
             preferences: ref.watch(ConfigOptions.mixedPort.notifier),
             title: t.pages.settings.inbound.mixedPort,

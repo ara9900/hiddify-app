@@ -128,6 +128,21 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
       }
       await prefs.setBool('tiknet_network_defaults_v1', true);
     });
+    // UDP remote DNS over SS stalls browsing; MTU 9000 hurts TUN-only paths.
+    await _init("tiknet network defaults v2", () async {
+      final prefs = container.read(sharedPreferencesProvider).requireValue;
+      if (prefs.getBool('tiknet_network_defaults_v2') == true) return;
+      final dns = container.read(ConfigOptions.remoteDnsAddress);
+      if (dns == 'udp://1.1.1.1' || dns == 'udp://8.8.8.8') {
+        await container
+            .read(ConfigOptions.remoteDnsAddress.notifier)
+            .update(ConfigOptions.tikNetDefaultRemoteDns);
+      }
+      if (container.read(ConfigOptions.mtu) >= 9000) {
+        await container.read(ConfigOptions.mtu.notifier).update(1500);
+      }
+      await prefs.setBool('tiknet_network_defaults_v2', true);
+    });
     // Migrate stored Apple captive urltest URL → gstatic (panel ping_test_url can still override later).
     await _init("tiknet connection test url", () async {
       final current = container.read(ConfigOptions.connectionTestUrl);
