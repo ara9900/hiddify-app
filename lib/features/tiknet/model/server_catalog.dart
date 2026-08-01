@@ -2,6 +2,7 @@ import 'package:dartx/dartx.dart';
 import 'package:flutter/material.dart';
 
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
+import 'package:hiddify/features/tiknet/widgets/tiknet_protocol_icon.dart';
 
 /// Client-side reachability from the user's device (ISP / region).
 enum TikNetClientPingState {
@@ -248,6 +249,7 @@ class TikNetSelectedServerInfo {
     required this.title,
     required this.subtitle,
     this.countryCode,
+    this.protocol,
     this.personal = false,
     this.pingLabel,
     this.pingColor,
@@ -257,6 +259,7 @@ class TikNetSelectedServerInfo {
   final String title;
   final String subtitle;
   final String? countryCode;
+  final String? protocol;
   final bool personal;
   final String? pingLabel;
   final Color? pingColor;
@@ -310,10 +313,11 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
         selected.personalTag!.isNotEmpty) {
       final node = personalCatalog?.nodes.where((n) => n.tag == selected.personalTag).firstOrNull;
       final ping = personalNodePings?[selected.personalTag!];
-      final sourceLabel = node?.isCatalog == true ? 'کاتالوگ' : 'اشتراک';
+      final sourceLabel = node?.isCatalog == true ? kTikNetAppExclusiveLabel : 'اشتراک';
       return TikNetSelectedServerInfo(
         title: node?.displayLabel ?? stripHiddifyTagSuffix(selected.personalTag!),
         subtitle: sourceLabel,
+        protocol: node?.protocol,
         personal: true,
         pingLabel: ping?.pingLabel,
         pingColor: ping?.pingColor,
@@ -332,7 +336,8 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
     final ping = personalNodePings?[merged.tag];
     return TikNetSelectedServerInfo(
       title: merged.displayLabel,
-      subtitle: 'کاتالوگ',
+      subtitle: kTikNetAppExclusiveLabel,
+      protocol: merged.protocol,
       personal: true,
       pingLabel: ping?.pingLabel,
       pingColor: ping?.pingColor,
@@ -350,7 +355,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
     final parts = <String>[match.countryLabel, match.tierLabel].where((e) => e.isNotEmpty);
     return TikNetSelectedServerInfo(
       title: match.name,
-      subtitle: parts.isEmpty ? 'کاتالوگ' : parts.join(' · '),
+      subtitle: parts.isEmpty ? kTikNetAppExclusiveLabel : parts.join(' · '),
       countryCode: match.countryCode,
       pingLabel: match.pingLabel,
       pingColor: match.pingColor,
@@ -359,7 +364,7 @@ TikNetSelectedServerInfo resolveSelectedServerInfo({
   }
   return TikNetSelectedServerInfo(
     title: 'سرور #${selected.catalogId}',
-    subtitle: 'کاتالوگ',
+    subtitle: kTikNetAppExclusiveLabel,
   );
 }
 

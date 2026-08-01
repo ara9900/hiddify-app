@@ -92,6 +92,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
           tag: tag,
           groupTag: mainGroup,
           label: _labelOf(o, tag),
+          protocol: type,
         ),
       );
     }
@@ -127,6 +128,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
             label: item.label,
             source: TikNetNodeSource.catalog,
             catalogId: input.server.id,
+            protocol: _typeOf(item.outbound),
           ),
         );
       }
@@ -164,6 +166,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
         probeUrl: n.probeUrl,
         source: n.source,
         catalogId: n.catalogId,
+        protocol: n.protocol,
       );
     }
   } else {
@@ -272,11 +275,14 @@ void _sanitizeWireGuardEndpoints(List<Map<String, dynamic>> endpoints) {
       o.remove('noise');
     }
 
-    final mtu = (o['mtu'] as num?)?.toInt();
-    // Nested Android TUN + WG overhead: 1420/1280 still hits EMSGSIZE
-    // (`sendmsg: message too long`) on this device; 1024 is reliable.
-    if (mtu == null || mtu > 1024) {
-      o['mtu'] = 1024;
+    if (!_hasExplicitAmneziaParams(o)) {
+      // Nested Android TUN: 1420 → EMSGSIZE; 1024 works but is slow.
+      // 1280 + UDP fragmentation is the best speed/reliability tradeoff.
+      o['mtu'] = 1280;
+      o['udp_fragment'] = true;
+    } else {
+      final mtu = (o['mtu'] as num?)?.toInt();
+      if (mtu != null && mtu > 1280) o['mtu'] = 1280;
     }
 
     endpoints[i] = o;

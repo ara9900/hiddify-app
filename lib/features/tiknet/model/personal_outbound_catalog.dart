@@ -51,6 +51,7 @@ class TikNetPersonalProxyNode {
     this.probeUrl = '',
     this.source = TikNetNodeSource.subscription,
     this.catalogId,
+    this.protocol = '',
   });
 
   final String tag;
@@ -59,6 +60,9 @@ class TikNetPersonalProxyNode {
   final String probeUrl;
   final TikNetNodeSource source;
   final int? catalogId;
+
+  /// sing-box / share-link type (`vless`, `wireguard`, `shadowsocks`, …).
+  final String protocol;
 
   bool get isCatalog => source == TikNetNodeSource.catalog;
 
@@ -288,6 +292,7 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromSubscriptionLinks(Strin
         groupTag: kCoreSelectorTag,
         label: label,
         probeUrl: _probeUrlFromProxyUri(uri),
+        protocol: uri.scheme.toLowerCase(),
       ),
     );
     index++;
@@ -397,6 +402,7 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
           groupTag: mainGroup,
           label: _nodeLabel(o, tag),
           probeUrl: _probeUrlFromOutbound(o),
+          protocol: type,
         ),
       );
     }
@@ -446,6 +452,7 @@ void _appendNodesFromOutboundRefs(
             groupTag: groupTag,
             label: _nodeLabel(def, tag),
             probeUrl: _probeUrlFromOutbound(def),
+            protocol: defType,
           ),
         );
       } else if (def == null) {
@@ -482,6 +489,7 @@ TikNetPersonalOutboundCatalog? _catalogFromClashProxies(
         groupTag: kCoreSelectorTag,
         label: name?.isNotEmpty == true ? name! : tag,
         probeUrl: _probeUrlFromOutbound(map),
+        protocol: type,
       ),
     );
   }
@@ -577,6 +585,7 @@ TikNetPersonalOutboundCatalog? _catalogFromXrayConfigBundle(List<dynamic> items)
           groupTag: kCoreSelectorTag,
           label: label,
           probeUrl: _probeUrlFromOutbound(o),
+          protocol: protocol,
         ),
       );
       break;

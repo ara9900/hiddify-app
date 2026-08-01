@@ -12,6 +12,7 @@ String encodeTikNetNodeMeta(List<TikNetPersonalProxyNode> nodes) {
           'source': n.source.name,
           if (n.catalogId != null) 'catalog_id': n.catalogId,
           'group': n.groupTag,
+          if (n.protocol.isNotEmpty) 'protocol': n.protocol,
         },
       )
       .toList();
@@ -37,6 +38,7 @@ Map<String, TikNetPersonalProxyNode> decodeTikNetNodeMeta(String raw) {
         label: (m['label'] as String?)?.trim().isNotEmpty == true ? (m['label'] as String).trim() : tag,
         source: source,
         catalogId: (m['catalog_id'] as num?)?.toInt(),
+        protocol: (m['protocol'] as String?)?.trim() ?? '',
       );
     }
     return map;
@@ -60,6 +62,7 @@ List<TikNetPersonalProxyNode> applyNodeMeta(
         probeUrl: n.probeUrl,
         source: m.source,
         catalogId: m.catalogId,
+        protocol: n.protocol.isNotEmpty ? n.protocol : m.protocol,
       );
     }
     final inferred = _inferFromTag(n.tag);
@@ -71,6 +74,7 @@ List<TikNetPersonalProxyNode> applyNodeMeta(
       probeUrl: n.probeUrl,
       source: inferred.source,
       catalogId: inferred.catalogId,
+      protocol: n.protocol,
     );
   }).toList();
 }

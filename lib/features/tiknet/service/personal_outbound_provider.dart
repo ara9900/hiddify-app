@@ -149,7 +149,7 @@ final personalOutboundProvider = FutureProvider<TikNetPersonalNodesState>((ref) 
       catalog: null,
       nodePings: const {},
       parseHint: hideCatalog
-          ? 'اشتراک شما محدود است؛ سرورهای کاتالوگ قفل شده‌اند.'
+          ? 'اشتراک شما محدود است؛ سرورهای اختصاصی اپلیکیشن قفل شده‌اند.'
           : 'لیست سرور آماده نیست. از حساب من → بروزرسانی را بزنید.',
     );
   }

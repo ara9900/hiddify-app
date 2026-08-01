@@ -16,6 +16,7 @@ import 'package:hiddify/features/tiknet/service/tiknet_smart_connect.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_user_info_provider.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_country_flag.dart';
 import 'package:hiddify/features/tiknet/widgets/tiknet_ping_chip.dart';
+import 'package:hiddify/features/tiknet/widgets/tiknet_protocol_icon.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Unified config picker: Smart Connection → subscription configs → catalog servers.
@@ -172,7 +173,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
                       child: Text(
-                        '${entitlement.message} سرورهای کاتالوگ (رایگان اضطراری) هم قفل هستند.',
+                        '${entitlement.message} سرورهای اختصاصی اپلیکیشن هم قفل هستند.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: TikNetColors.error, fontSize: 12, height: 1.4),
                       ),
@@ -197,7 +198,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                         const _SectionHeader(title: 'همه سرورها'),
                       ...sortNodesByPing(selectableNodes, nodePings).map((node) {
                         final ping = nodePings[node.tag];
-                        final badge = node.isCatalog ? 'کاتالوگ' : 'اشتراک';
+                        final badge = node.isCatalog ? kTikNetAppExclusiveLabel : 'اشتراک';
                         final selectedNode = selected.isPersonal &&
                             selected.personalKind == TikNetPersonalPickKind.proxy &&
                             selected.personalTag == node.tag;
@@ -207,6 +208,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                         return _ServerRow(
                           title: node.displayLabel,
                           subtitle: badge,
+                          protocol: node.protocol,
                           personal: !node.isCatalog,
                           selected: selectedNode || selectedLegacyCat,
                           enabled: true,
@@ -232,7 +234,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                             !selected.isPersonal && selected.catalogId != null && selected.catalogId == s.id;
                         return _ServerRow(
                           title: s.name,
-                          subtitle: [s.countryLabel, s.tierLabel, 'کاتالوگ'].where((e) => e.isNotEmpty).join(' · '),
+                          subtitle: [s.countryLabel, s.tierLabel, kTikNetAppExclusiveLabel].where((e) => e.isNotEmpty).join(' · '),
                           countryCode: s.countryCode,
                           selected: selectedLegacyCat,
                           enabled: true,
@@ -256,7 +258,8 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                       ...lockedMergedCatalogNodes.map(
                         (n) => _ServerRow(
                           title: n.displayLabel,
-                          subtitle: 'کاتالوگ',
+                          subtitle: kTikNetAppExclusiveLabel,
+                          protocol: n.protocol,
                           personal: false,
                           selected: false,
                           enabled: false,
@@ -266,7 +269,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
                       ...lockedCatalogUnique.map(
                         (s) => _ServerRow(
                           title: s.name,
-                          subtitle: [s.countryLabel, s.tierLabel, 'کاتالوگ'].where((e) => e.isNotEmpty).join(' · '),
+                          subtitle: [s.countryLabel, s.tierLabel, kTikNetAppExclusiveLabel].where((e) => e.isNotEmpty).join(' · '),
                           countryCode: s.countryCode,
                           selected: false,
                           enabled: false,
@@ -320,7 +323,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
             content: Text(
               entitlement.message.isNotEmpty
                   ? entitlement.message
-                  : 'سرورهای کاتالوگ در حال حاضر در دسترس نیستند.',
+                  : 'سرورهای اختصاصی اپلیکیشن در حال حاضر در دسترس نیستند.',
             ),
             behavior: SnackBarBehavior.floating,
           ),
@@ -347,7 +350,7 @@ class TikNetServerPickerSheet extends ConsumerWidget {
             ok
                 ? 'سرور انتخاب شد.'
                 : (selectionUsesCatalog(selection)
-                    ? 'سرور کاتالوگ آماده نشد. بروزرسانی را بزنید یا دوباره تلاش کنید.'
+                    ? 'سرور اختصاصی اپلیکیشن آماده نشد. بروزرسانی را بزنید یا دوباره تلاش کنید.'
                     : 'اعمال سرور ناموفق بود.'),
           ),
           behavior: SnackBarBehavior.floating,
@@ -390,6 +393,7 @@ class _ServerRow extends StatelessWidget {
     required this.selected,
     required this.enabled,
     this.countryCode,
+    this.protocol,
     this.personal = false,
     this.smart = false,
     this.locked = false,
@@ -402,6 +406,7 @@ class _ServerRow extends StatelessWidget {
   final String title;
   final String subtitle;
   final String? countryCode;
+  final String? protocol;
   final bool personal;
   final bool smart;
   final bool selected;
@@ -449,6 +454,8 @@ class _ServerRow extends StatelessWidget {
                       ),
                       child: const Icon(Icons.auto_awesome_rounded, color: TikNetColors.primary),
                     )
+                  else if ((protocol ?? '').trim().isNotEmpty)
+                    TikNetProtocolIcon(protocol: protocol, size: 44)
                   else
                     TikNetCountryFlag(countryCode: countryCode, personal: personal, size: 44),
                   const Gap(12),
@@ -547,6 +554,8 @@ class TikNetServerSelectorCard extends ConsumerWidget {
                           )
                         : const Icon(Icons.auto_awesome_rounded, color: TikNetColors.primary),
                   )
+                else if ((info.protocol ?? '').trim().isNotEmpty)
+                  TikNetProtocolIcon(protocol: info.protocol, size: 48)
                 else
                   TikNetCountryFlag(
                     countryCode: info.countryCode,
