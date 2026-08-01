@@ -50,6 +50,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
 }) {
   final base = _parseSingboxMap(subscriptionRaw);
   final outbounds = <Map<String, dynamic>>[];
+  final endpoints = <Map<String, dynamic>>[];
   final usedTags = <String>{};
   final nodes = <TikNetPersonalProxyNode>[];
 
@@ -58,7 +59,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
 
   if (base != null) {
     final baseOuts = <Map<String, dynamic>>[];
-    for (final o in _outboundsList(base)) {
+    for (final o in _sectionMaps(base, 'outbounds')) {
       final tag = (o['tag'] as String?)?.trim() ?? '';
       if (isUnroutableOutbound(o)) {
         // Panel banner entries ("ترافیک باقی مانده" and friends) are shipped as
@@ -71,9 +72,18 @@ TikNetMergedConfigResult mergeTikNetConfigs({
       if (tag.isNotEmpty) usedTags.add(tag);
       outbounds.add(Map<String, dynamic>.from(o));
     }
+    for (final o in _sectionMaps(base, 'endpoints')) {
+      final tag = (o['tag'] as String?)?.trim() ?? '';
+      if (isUnroutableOutbound(o)) {
+        if (tag.isNotEmpty) droppedTags.add(tag);
+        continue;
+      }
+      if (tag.isNotEmpty) usedTags.add(tag);
+      endpoints.add(Map<String, dynamic>.from(o));
+    }
     mainGroup = _resolveSelectorTag(baseOuts) ?? mainGroup;
 
-    for (final o in baseOuts) {
+    for (final o in [...baseOuts, ...endpoints]) {
       final type = _typeOf(o);
       final tag = (o['tag'] as String?)?.trim() ?? '';
       if (tag.isEmpty || _skipOutboundTypes.contains(type)) continue;
@@ -213,6 +223,11 @@ TikNetMergedConfigResult mergeTikNetConfigs({
     if (base != null) ...base,
     'outbounds': outbounds,
   };
+  if (endpoints.isNotEmpty) {
+    config['endpoints'] = endpoints;
+  } else {
+    config.remove('endpoints');
+  }
   final route = config['route'];
   if (route is Map<String, dynamic>) {
     route['final'] = mainGroup;
@@ -244,7 +259,7 @@ String? stripCatalogOutboundsFromConfig(String raw) {
   final map = _parseSingboxMap(raw);
   if (map == null) return null;
 
-  final outs = _outboundsList(map);
+  final outs = _sectionMaps(map, 'outbounds');
   final drop = <String>{
     for (final o in outs)
       if (isTikNetCatalogOutboundTag((o['tag'] as String?) ?? '')) (o['tag'] as String).trim(),
@@ -393,8 +408,8 @@ Map<String, dynamic>? _parseSingboxMap(String? raw) {
   return null;
 }
 
-List<Map<String, dynamic>> _outboundsList(Map<String, dynamic> config) {
-  final raw = config['outbounds'] ?? config['endpoints'];
+List<Map<String, dynamic>> _sectionMaps(Map<String, dynamic> config, String key) {
+  final raw = config[key];
   if (raw is! List) return const [];
   final out = <Map<String, dynamic>>[];
   for (final e in raw) {
@@ -403,6 +418,19 @@ List<Map<String, dynamic>> _outboundsList(Map<String, dynamic> config) {
     } else if (e is Map) {
       out.add(Map<String, dynamic>.from(e));
     }
+  }
+  return out;
+}
+
+/// Outbounds plus endpoints (WireGuard lives under endpoints in sing-box 1.11+).
+List<Map<String, dynamic>> _outboundsList(Map<String, dynamic> config) {
+  final out = <Map<String, dynamic>>[..._sectionMaps(config, 'outbounds')];
+  final seen = {for (final o in out) (o['tag'] as String?)?.trim() ?? ''};
+  for (final o in _sectionMaps(config, 'endpoints')) {
+    final tag = (o['tag'] as String?)?.trim() ?? '';
+    if (tag.isNotEmpty && seen.contains(tag)) continue;
+    if (tag.isNotEmpty) seen.add(tag);
+    out.add(o);
   }
   return out;
 }

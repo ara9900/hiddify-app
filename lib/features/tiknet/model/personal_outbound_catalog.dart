@@ -177,6 +177,7 @@ const _proxyUriSchemes = {
   'hysteria',
   'ssh',
   'wg',
+  'wireguard',
   'awg',
   'shadowtls',
   'mieru',
@@ -336,20 +337,16 @@ TikNetPersonalOutboundCatalog? parsePersonalOutboundsFromConfig(String rawConfig
       return _catalogFromXrayConfigBundle(decoded);
     }
     if (decoded is! Map<String, dynamic>) return null;
-    var outboundsRaw = decoded['outbounds'] ?? decoded['endpoints'];
-    if (outboundsRaw is! List) {
+    // sing-box 1.11+ puts WireGuard (and similar) under `endpoints`, while
+    // classic proxies stay in `outbounds`. Both must be listed in the picker.
+    final outbounds = _mapsFromConfigSections(decoded, const ['outbounds', 'endpoints']);
+    if (outbounds.isEmpty) {
       final clashProxies = decoded['proxies'];
       if (clashProxies is List) {
         return _catalogFromClashProxies(decoded, clashProxies);
       }
       return null;
     }
-
-    final outbounds = <Map<String, dynamic>>[];
-    for (final o in outboundsRaw) {
-      if (o is Map<String, dynamic>) outbounds.add(o);
-    }
-    if (outbounds.isEmpty) return null;
 
     final mainGroup = _resolveMainSelectorTag(decoded, outbounds);
     final autoModes = <TikNetPersonalAutoMode>[];
@@ -608,15 +605,34 @@ TikNetPersonalOutboundCatalog? _catalogFromXrayConfigBundle(List<dynamic> items)
 }
 
 String _probeUrlFromOutbound(Map<String, dynamic> o) {
+  final type = _outboundType(o);
   final hosts = <String>[];
   void addHost(String? h) {
-    final v = (h ?? '').trim();
+    var v = (h ?? '').trim();
+    if (v.isEmpty) return;
+    // WireGuard local address often looks like "10.0.0.9/32".
+    final slash = v.indexOf('/');
+    if (slash > 0) v = v.substring(0, slash);
     if (v.isNotEmpty && !hosts.contains(v)) hosts.add(v);
   }
 
-  addHost(o['server'] as String?);
-  addHost(o['address'] as String?);
   int? nestedPort;
+  // Peers first — WireGuard endpoints dial peers[], not the tunnel address.
+  final peers = o['peers'];
+  if (peers is List) {
+    for (final p in peers) {
+      if (p is! Map) continue;
+      addHost(p['address'] as String?);
+      addHost(p['server'] as String?);
+      nestedPort ??= (p['port'] as num?)?.toInt() ?? (p['server_port'] as num?)?.toInt();
+    }
+  }
+
+  addHost(o['server'] as String?);
+  // WG/WARP `address` is the tunnel interface CIDR, not a remote probe host.
+  if (type != 'wireguard' && type != 'warp') {
+    addHost(o['address'] as String?);
+  }
   final settings = o['settings'];
   if (settings is Map<String, dynamic>) {
     final vnext = settings['vnext'];
@@ -655,4 +671,30 @@ String _probeUrlFromOutbound(Map<String, dynamic> o) {
   final port = (o['server_port'] as num?)?.toInt() ?? (o['port'] as num?)?.toInt() ?? nestedPort;
   if (port != null && port > 0 && port != 443) return 'https://$host:$port';
   return 'https://$host';
+}
+
+/// Collect outbound/endpoint objects from one or more top-level config keys.
+List<Map<String, dynamic>> _mapsFromConfigSections(
+  Map<String, dynamic> config,
+  List<String> keys,
+) {
+  final out = <Map<String, dynamic>>[];
+  final seenTags = <String>{};
+  for (final key in keys) {
+    final raw = config[key];
+    if (raw is! List) continue;
+    for (final e in raw) {
+      Map<String, dynamic>? map;
+      if (e is Map<String, dynamic>) {
+        map = e;
+      } else if (e is Map) {
+        map = Map<String, dynamic>.from(e);
+      }
+      if (map == null) continue;
+      final tag = (map['tag'] as String?)?.trim() ?? '';
+      if (tag.isNotEmpty && !seenTags.add(tag)) continue;
+      out.add(map);
+    }
+  }
+  return out;
 }

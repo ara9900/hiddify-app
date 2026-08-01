@@ -252,6 +252,47 @@ void main() {
     });
   });
 
+  group('wireguard endpoints', () {
+    test('merge keeps endpoints and adds them to selector', () {
+      final sub = jsonEncode({
+        'outbounds': [
+          {
+            'type': 'selector',
+            'tag': 'select',
+            'outbounds': ['vless-1'],
+          },
+          {
+            'type': 'vless',
+            'tag': 'vless-1',
+            'server': 'de.example.com',
+            'server_port': 443,
+          },
+          {'type': 'direct', 'tag': 'direct'},
+        ],
+        'endpoints': [
+          {
+            'type': 'wireguard',
+            'tag': 'WG § 5',
+            'address': '10.0.0.9/32',
+            'peers': [
+              {'address': '31.216.62.129', 'port': 443},
+            ],
+          },
+        ],
+        'route': {'final': 'select'},
+      });
+      final merged = mergeTikNetConfigs(subscriptionRaw: sub, catalogConfigs: const []);
+      expect(merged.nodes.map((n) => n.tag), containsAll(['vless-1', 'WG § 5']));
+      final map = jsonDecode(merged.configJson) as Map<String, dynamic>;
+      final endpoints = (map['endpoints'] as List).cast<Map<String, dynamic>>();
+      expect(endpoints.any((e) => e['tag'] == 'WG § 5'), isTrue);
+      final select = (map['outbounds'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((o) => o['type'] == 'selector');
+      expect((select['outbounds'] as List).map((e) => e.toString()), contains('WG § 5'));
+    });
+  });
+
   group('isUnroutableOutbound', () {
     test('flags placeholder servers and bad ports', () {
       expect(isUnroutableOutbound({'type': 'vless', 'server': '0.0.0.0', 'server_port': 1234}), isTrue);

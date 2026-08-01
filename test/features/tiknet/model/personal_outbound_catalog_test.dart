@@ -23,6 +23,41 @@ void main() {
     expect(catalog.nodes.map((n) => n.tag).toList(), containsAll(['DE-1', 'TR-2']));
   });
 
+  test('parsePersonalOutboundsFromConfig includes WireGuard endpoints', () {
+    const raw = '''
+{
+  "outbounds": [
+    {"type": "selector", "tag": "select", "outbounds": ["auto", "vless-1"]},
+    {"type": "urltest", "tag": "auto", "outbounds": ["vless-1"]},
+    {"type": "vless", "tag": "vless-1", "server": "de.example.com", "server_port": 443}
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "WG § 5",
+      "address": ["10.0.0.9/32"],
+      "peers": [{"address": "31.216.62.129", "port": 443}]
+    }
+  ]
+}
+''';
+    final catalog = parsePersonalOutboundsFromConfig(raw);
+    expect(catalog, isNotNull);
+    expect(catalog!.nodes.map((n) => n.tag), containsAll(['vless-1', 'WG § 5']));
+    final wg = catalog.nodes.firstWhere((n) => n.tag.startsWith('WG'));
+    expect(wg.probeUrl, contains('31.216.62.129'));
+    expect(wg.probeUrl, isNot(contains('10.0.0.9')));
+  });
+
+  test('parsePersonalOutboundsFromSubscriptionLinks accepts wireguard:// scheme', () {
+    const raw =
+        'wireguard://abc@31.216.62.129:443?address=10.0.0.9%2F32&mtu=1420&publickey=xyz#WG';
+    final catalog = parsePersonalOutboundsFromSubscriptionLinks(raw);
+    expect(catalog, isNotNull);
+    expect(catalog!.nodes, isNotEmpty);
+    expect(catalog.nodes.first.label, 'WG');
+  });
+
   test('parsePersonalOutboundsFromConfig supports Xray protocol field', () {
     const raw = '''
 {
