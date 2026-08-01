@@ -273,9 +273,10 @@ void _sanitizeWireGuardEndpoints(List<Map<String, dynamic>> endpoints) {
     }
 
     final mtu = (o['mtu'] as num?)?.toInt();
-    if (mtu != null && mtu > 1280) {
-      // Nested TUN + WG overhead frequently trips EMSGSIZE at 1420 on mobile.
-      o['mtu'] = 1280;
+    // Nested Android TUN + WG overhead: 1420/1280 still hits EMSGSIZE
+    // (`sendmsg: message too long`) on this device; 1024 is reliable.
+    if (mtu == null || mtu > 1024) {
+      o['mtu'] = 1024;
     }
 
     endpoints[i] = o;

@@ -340,7 +340,7 @@ void main() {
       final map = jsonDecode(merged.configJson) as Map<String, dynamic>;
       final wg = (map['endpoints'] as List).cast<Map<String, dynamic>>().single;
       expect(wg.containsKey('noise'), isFalse);
-      expect(wg['mtu'], 1280);
+      expect(wg['mtu'], 1024);
       expect(wg['address'], '10.0.0.9/32');
       final select = (map['outbounds'] as List)
           .cast<Map<String, dynamic>>()
