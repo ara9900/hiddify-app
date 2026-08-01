@@ -181,16 +181,27 @@ TikNetMergedConfigResult mergeTikNetConfigs({
   // Critical for Reality/catalog ping: urltest groups (e.g. "auto") must list the
   // same leaf tags. Merge previously only updated the selector, so urltest stayed
   // subscription-only and Reality catalog nodes never received delays.
+  // WireGuard endpoints must NOT enter urltest — outbound monitoring panics on them
+  // (`OutboundMonitoring.Start` nil deref) and kills VPN start.
+  final wireguardTags = {
+    for (final e in endpoints)
+      if (_typeOf(e) == 'wireguard') ((e['tag'] as String?)?.trim() ?? ''),
+  }..removeWhere((t) => t.isEmpty);
+  final urltestTags = selectableTags.where((t) => !wireguardTags.contains(t)).toList();
+
   for (var i = 0; i < outbounds.length; i++) {
     if (_typeOf(outbounds[i]) != 'urltest') continue;
     final ut = Map<String, dynamic>.from(outbounds[i]);
-    ut['outbounds'] = _mergeOutboundTagList(ut['outbounds'], selectableTags);
+    final merged = _mergeOutboundTagList(ut['outbounds'], urltestTags)
+        .where((t) => !wireguardTags.contains(t))
+        .toList();
+    ut['outbounds'] = merged;
     outbounds[i] = ut;
   }
 
   // Ensure at least one urltest group exists for ping/smart-connect.
   final hasUrltest = outbounds.any((o) => _typeOf(o) == 'urltest');
-  if (!hasUrltest) {
+  if (!hasUrltest && urltestTags.isNotEmpty) {
     final selIdx = outbounds.indexWhere((o) => _typeOf(o) == 'selector');
     final insertAt = selIdx < 0 ? 0 : (selIdx + 1).clamp(0, outbounds.length);
     outbounds.insert(
@@ -198,7 +209,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
       {
         'type': 'urltest',
         'tag': 'auto',
-        'outbounds': List<String>.from(selectableTags),
+        'outbounds': List<String>.from(urltestTags),
         'url': 'https://www.gstatic.com/generate_204',
         'interval': '10m',
         'tolerance': 50,
@@ -224,6 +235,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
     'outbounds': outbounds,
   };
   if (endpoints.isNotEmpty) {
+    _sanitizeWireGuardEndpoints(endpoints);
     config['endpoints'] = endpoints;
   } else {
     config.remove('endpoints');
@@ -240,6 +252,57 @@ TikNetMergedConfigResult mergeTikNetConfigs({
     mainGroupTag: mainGroup,
     nodes: nodes,
   );
+}
+
+/// ray2sing injects Amnezia-style `noise.fake_packet` defaults on plain
+/// `wireguard://` links (no ifp*). Standard WG peers then fail with
+/// `sendmsg: message too long` / dead handshake. Strip those defaults and
+/// make the peer dial leave the Android VPN via `direct`.
+void _sanitizeWireGuardEndpoints(List<Map<String, dynamic>> endpoints) {
+  for (var i = 0; i < endpoints.length; i++) {
+    final o = Map<String, dynamic>.from(endpoints[i]);
+    if (_typeOf(o) != 'wireguard') {
+      endpoints[i] = o;
+      continue;
+    }
+
+    // Plain wireguard:// gets Amnezia-style noise from ray2sing; strip unless
+    // the endpoint itself carries explicit Amnezia junk params.
+    if (!_hasExplicitAmneziaParams(o) && o.containsKey('noise')) {
+      o.remove('noise');
+    }
+
+    final mtu = (o['mtu'] as num?)?.toInt();
+    if (mtu != null && mtu > 1280) {
+      // Nested TUN + WG overhead frequently trips EMSGSIZE at 1420 on mobile.
+      o['mtu'] = 1280;
+    }
+
+    endpoints[i] = o;
+  }
+}
+
+/// AmneziaWG junk/handshake params — if present, keep noise as authored.
+bool _hasExplicitAmneziaParams(Map<String, dynamic> o) {
+  const keys = {
+    'jc',
+    'jmin',
+    'jmax',
+    's1',
+    's2',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'junk_packet',
+    'junk_packet_count',
+    'init_packet_junk_size',
+    'response_packet_junk_size',
+  };
+  for (final k in keys) {
+    if (o.containsKey(k) && o[k] != null) return true;
+  }
+  return false;
 }
 
 /// True when an outbound tag was assigned by [mergeTikNetConfigs] for a catalog server.

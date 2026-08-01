@@ -291,6 +291,67 @@ void main() {
           .firstWhere((o) => o['type'] == 'selector');
       expect((select['outbounds'] as List).map((e) => e.toString()), contains('WG § 5'));
     });
+
+    test('strips injected default noise and keeps WG out of urltest', () {
+      final sub = jsonEncode({
+        'outbounds': [
+          {
+            'type': 'selector',
+            'tag': 'select',
+            'outbounds': ['auto', 'WG § 5', 'vless-1'],
+          },
+          {
+            'type': 'urltest',
+            'tag': 'auto',
+            'outbounds': ['WG § 5', 'vless-1'],
+          },
+          {
+            'type': 'vless',
+            'tag': 'vless-1',
+            'server': 'de.example.com',
+            'server_port': 443,
+          },
+          {'type': 'direct', 'tag': 'direct'},
+        ],
+        'endpoints': [
+          {
+            'type': 'wireguard',
+            'tag': 'WG § 5',
+            'mtu': 1420,
+            'address': '10.0.0.9/32',
+            'private_key': 'x',
+            'peers': [
+              {'address': '31.216.62.129', 'port': 443, 'public_key': 'y'},
+            ],
+            'noise': {
+              'fake_packet': {
+                'enabled': true,
+                'count': '2-10',
+                'size': '30-50',
+                'delay': '30-50',
+                'mode': 'm4',
+              },
+            },
+          },
+        ],
+        'route': {'final': 'select'},
+      });
+      final merged = mergeTikNetConfigs(subscriptionRaw: sub, catalogConfigs: const []);
+      final map = jsonDecode(merged.configJson) as Map<String, dynamic>;
+      final wg = (map['endpoints'] as List).cast<Map<String, dynamic>>().single;
+      expect(wg.containsKey('noise'), isFalse);
+      expect(wg['mtu'], 1280);
+      expect(wg['address'], '10.0.0.9/32');
+      final select = (map['outbounds'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((o) => o['type'] == 'selector');
+      expect((select['outbounds'] as List).map((e) => e.toString()), contains('WG § 5'));
+      final auto = (map['outbounds'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((o) => o['type'] == 'urltest');
+      expect((auto['outbounds'] as List).map((e) => e.toString()), isNot(contains('WG § 5')));
+      expect((auto['outbounds'] as List).map((e) => e.toString()), contains('vless-1'));
+    });
   });
 
   group('isUnroutableOutbound', () {
