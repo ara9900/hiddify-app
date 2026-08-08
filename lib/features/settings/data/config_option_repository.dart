@@ -57,11 +57,10 @@ abstract class ConfigOptions {
     mapTo: (value) => value.key,
   );
 
-  /// TikNet: DoH through the proxy. Plain UDP DNS over Shadowsocks (common on
-  /// catalog SS/443) often stalls or blackholes browser lookups while TCP still
-  /// works — matching "v2rayNG fast, TikNet dead". TCP remote DNS was worse
-  /// (handshake-per-query stalls); DoH reuses one TLS session.
-  static const tikNetDefaultRemoteDns = "https://1.1.1.1/dns-query";
+  /// Match stock Hiddify remote DNS. Forced DoH previously added an extra TLS
+  /// hop on every lookup and slowed TUN browsing for many nodes; users can
+  /// still pick DoH manually in settings when a catalog SS UDP path needs it.
+  static const tikNetDefaultRemoteDns = "tcp://8.8.8.8";
 
   static final remoteDnsAddress = PreferencesNotifier.create<String, String>(
     "remote-dns-address",

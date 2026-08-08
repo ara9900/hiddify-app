@@ -202,9 +202,13 @@ TikNetMergedConfigResult mergeTikNetConfigs({
     outbounds[i] = ut;
   }
 
-  // Ensure at least one urltest group exists for ping/smart-connect.
-  final hasUrltest = outbounds.any((o) => _typeOf(o) == 'urltest');
-  if (!hasUrltest && urltestTags.isNotEmpty) {
+  // Ensure at least one urltest group exists for ping/smart-connect, and that
+  // the main selector can select it (stock Hiddify "Auto" behaviour).
+  final urltestGroupTags = [
+    for (final o in outbounds)
+      if (_typeOf(o) == 'urltest') ((o['tag'] as String?)?.trim() ?? ''),
+  ]..removeWhere((t) => t.isEmpty);
+  if (urltestGroupTags.isEmpty && urltestTags.isNotEmpty) {
     final selIdx = outbounds.indexWhere((o) => _typeOf(o) == 'selector');
     final insertAt = selIdx < 0 ? 0 : (selIdx + 1).clamp(0, outbounds.length);
     outbounds.insert(
@@ -218,11 +222,25 @@ TikNetMergedConfigResult mergeTikNetConfigs({
         'tolerance': 50,
       },
     );
-    // Prefer auto inside selector when we just created it.
-    if (selIdx >= 0) {
-      final sel = Map<String, dynamic>.from(outbounds[selIdx]);
-      sel['outbounds'] = _mergeOutboundTagList(['auto'], _tagList(sel['outbounds']));
-      outbounds[selIdx] = sel;
+    urltestGroupTags.add('auto');
+  }
+  if (urltestGroupTags.isNotEmpty) {
+    final selIdx = outbounds.indexWhere(
+      (o) => _typeOf(o) == 'selector' && ((o['tag'] as String?)?.trim() ?? '') == mainGroup,
+    );
+    final idx = selIdx >= 0 ? selIdx : outbounds.indexWhere((o) => _typeOf(o) == 'selector');
+    if (idx >= 0) {
+      final sel = Map<String, dynamic>.from(outbounds[idx]);
+      sel['outbounds'] = _mergeOutboundTagList(urltestGroupTags, _tagList(sel['outbounds']));
+      // Prefer urltest/auto as default so Connect is not stuck on balance/round-robin.
+      final prefer = urltestGroupTags.contains('auto')
+          ? 'auto'
+          : (urltestGroupTags.contains('lowest') ? 'lowest' : urltestGroupTags.first);
+      final currentDefault = sel['default']?.toString().trim() ?? '';
+      if (currentDefault.isEmpty || currentDefault == kCoreBalanceTag || currentDefault == 'balance') {
+        sel['default'] = prefer;
+      }
+      outbounds[idx] = sel;
     }
   }
 
@@ -276,9 +294,11 @@ void _sanitizeWireGuardEndpoints(List<Map<String, dynamic>> endpoints) {
     }
 
     if (!_hasExplicitAmneziaParams(o)) {
-      // Nested Android TUN: 1420 → EMSGSIZE; 1024 works but is slow.
-      // 1280 + UDP fragmentation is the best speed/reliability tradeoff.
-      o['mtu'] = 1280;
+      // Nested Android TUN: values above ~1280 often hit EMSGSIZE.
+      // Cap only when the author left a too-high MTU; keep authored lower values
+      // and enable UDP fragmentation so large packets can still flow.
+      final mtu = (o['mtu'] as num?)?.toInt();
+      if (mtu == null || mtu > 1280) o['mtu'] = 1280;
       o['udp_fragment'] = true;
     } else {
       final mtu = (o['mtu'] as num?)?.toInt();

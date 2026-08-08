@@ -11,8 +11,8 @@ import 'package:hiddify/features/tiknet/service/tiknet_config_merger.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// On-demand pings — never toggles the user-facing VPN / startedByUser.
-/// - VPN on (user): sing-box urltest through the live core.
-/// - VPN off: temporary ServiceMode.proxy urltest probe, then disconnect.
+/// - VPN on (user): sing-box urltest through the live core (stock Hiddify style).
+/// - VPN off: TCP estimate only — no temporary proxy probe (that raced Connect).
 /// Call [measure] only from explicit UI (e.g. server picker refresh).
 class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNetClientPingResult>> {
   @override
@@ -54,22 +54,17 @@ class TikNetNodePingsNotifier extends AutoDisposeAsyncNotifier<Map<String, TikNe
     final startedByUser = ref.read(Preferences.startedByUser);
     final connected = ref.read(connectionNotifierProvider).valueOrNull is Connected;
     final service = ref.read(tikNetClientPingServiceProvider);
-    final notifier = ref.read(connectionNotifierProvider.notifier);
 
-    // Never start a proxy probe while the user intends VPN (Connecting / restore).
-    // That used to leave ServiceMode stuck on proxy.
-    if (startedByUser) {
-      if (!connected) {
-        throw StateError('vpn connecting — skip ping probe');
-      }
+    // Stock Hiddify: urltest only against a live core. Starting a temporary
+    // proxy-mode probe raced Connect, stuck ServiceMode on proxy, and aborted
+    // real tunnels — so when VPN is off we only do a cheap TCP estimate.
+    if (startedByUser && connected) {
       return await service.measureNodePingsFromCore(catalog).timeout(const Duration(seconds: 50));
     }
-    // Pre-connect: real urltest via temporary proxy-mode core (not TCP).
-    return await notifier
-        .runUrlTestProbe(
-          () => service.measureNodePingsFromCore(catalog, skipServiceCheck: true),
-        )
-        .timeout(const Duration(seconds: 75));
+    if (startedByUser && !connected) {
+      throw StateError('vpn connecting — skip ping probe');
+    }
+    return await service.measureNodePingsTcp(catalog).timeout(const Duration(seconds: 20));
   }
 }
 

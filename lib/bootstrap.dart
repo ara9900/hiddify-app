@@ -118,13 +118,9 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
     await _init("tiknet network defaults", () async {
       final prefs = container.read(sharedPreferencesProvider).requireValue;
       if (prefs.getBool('tiknet_network_defaults_v1') == true) return;
-      if (container.read(ConfigOptions.remoteDnsAddress).startsWith('tcp://')) {
-        await container
-            .read(ConfigOptions.remoteDnsAddress.notifier)
-            .update(ConfigOptions.tikNetDefaultRemoteDns);
-      }
-      if (container.read(ConfigOptions.urlTestInterval) < const Duration(minutes: 30)) {
-        await container.read(ConfigOptions.urlTestInterval.notifier).update(const Duration(minutes: 30));
+      // Historical: v1 forced DoH. Keep the flag for upgrades but never push HTTPS DNS.
+      if (container.read(ConfigOptions.mtu) >= 9000) {
+        await container.read(ConfigOptions.mtu.notifier).update(1500);
       }
       await prefs.setBool('tiknet_network_defaults_v1', true);
     });
@@ -142,6 +138,24 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
         await container.read(ConfigOptions.mtu.notifier).update(1500);
       }
       await prefs.setBool('tiknet_network_defaults_v2', true);
+    });
+    // Undo forced DoH from v1/v2 — restore stock Hiddify tcp://8.8.8.8 and
+    // clear legacy smart-connect per-node locks that pinned dead outbounds.
+    await _init("tiknet network defaults v3", () async {
+      final prefs = container.read(sharedPreferencesProvider).requireValue;
+      if (prefs.getBool('tiknet_network_defaults_v3') == true) return;
+      final dns = container.read(ConfigOptions.remoteDnsAddress);
+      if (dns.startsWith('https://')) {
+        await container
+            .read(ConfigOptions.remoteDnsAddress.notifier)
+            .update(ConfigOptions.tikNetDefaultRemoteDns);
+      }
+      if (container.read(ConfigOptions.mtu) >= 9000) {
+        await container.read(ConfigOptions.mtu.notifier).update(1500);
+      }
+      await container.read(Preferences.tikNetSmartLockedTag.notifier).update('');
+      await container.read(Preferences.tikNetSmartLockedGroup.notifier).update('');
+      await prefs.setBool('tiknet_network_defaults_v3', true);
     });
     // Migrate stored Apple captive urltest URL → gstatic (panel ping_test_url can still override later).
     await _init("tiknet connection test url", () async {

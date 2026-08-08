@@ -1,19 +1,15 @@
-import 'dart:async';
-
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hiddify/features/tiknet/model/personal_outbound_catalog.dart';
 import 'package:hiddify/features/tiknet/model/server_catalog.dart';
-import 'package:hiddify/features/tiknet/service/personal_outbound_provider.dart';
-import 'package:hiddify/features/tiknet/service/sync_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_client_ping_service.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_core_selection.dart';
 import 'package:hiddify/features/tiknet/service/tiknet_diagnostic_log.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// True while smart-connect is measuring pings / selecting outbound.
+/// True while smart-connect is selecting the urltest/auto group.
 final tikNetSmartPickingProvider = StateProvider<bool>((ref) => false);
 
 Future<void> clearTikNetSmartLock(Ref ref) async {
@@ -26,77 +22,29 @@ Future<void> clearTikNetSmartLockWidget(WidgetRef ref) async {
   await ref.read(Preferences.tikNetSmartLockedGroup.notifier).update('');
 }
 
-/// After VPN is Connected with smart selection: urltest all nodes, pick lowest ping,
-/// lock that outbound for the session (until disconnect / reconnect).
+/// After VPN is Connected with smart selection: park on the core urltest/auto
+/// group (same behaviour as stock Hiddify "Auto") and let sing-box pick.
+///
+/// Previously we urltested every leaf, locked one tag for the session, and left
+/// traffic on `balance` for ~20s — which caused dead-node locks and slow starts.
 Future<void> applyTikNetSmartConnect(WidgetRef ref) async {
   if (ref.read(connectionNotifierProvider).valueOrNull is! Connected) return;
 
+  // Drop any legacy per-node lock from older builds.
   final lockedTag = ref.read(Preferences.tikNetSmartLockedTag).trim();
-  final lockedGroup = ref.read(Preferences.tikNetSmartLockedGroup).trim();
   if (lockedTag.isNotEmpty) {
-    await _selectOutbound(ref, groupTag: lockedGroup, outboundTag: lockedTag, reason: 'smart-locked');
-    return;
+    await clearTikNetSmartLockWidget(ref);
   }
 
   ref.read(tikNetSmartPickingProvider.notifier).state = true;
   try {
-    // Measuring takes ~20s. Until it finishes the core routes through its own
-    // `balance` default, which round-robins over dead outbounds, so park traffic
-    // on the lowest-delay group first.
-    await ensureSafeDefaultOutbound(
+    final ok = await ensureSafeDefaultOutbound(
       ref.read(proxyRepositoryProvider),
-      reason: 'smart-measuring',
+      reason: 'smart-urltest',
     );
-
-    final nodesState = await ref.read(personalOutboundProvider.future).timeout(
-      const Duration(seconds: 20),
-      onTimeout: () => const TikNetPersonalNodesState(catalog: null, nodePings: {}),
-    );
-    final catalog = nodesState.catalog;
-    if (catalog == null || catalog.nodes.isEmpty) {
-      TikNetDiagnosticLog.w('smart', 'no nodes for smart connect');
-      return;
-    }
-
-    // Brief pause scaled by node count (feels intentional; keeps UI calm).
-    final pauseMs = (800 + catalog.nodes.length * 120).clamp(800, 4500);
-    await Future<void>.delayed(Duration(milliseconds: pauseMs));
-
-    if (ref.read(connectionNotifierProvider).valueOrNull is! Connected) return;
-
-    final pings = await ref
-        .read(tikNetClientPingServiceProvider)
-        .measureNodePingsFromCore(catalog)
-        .timeout(const Duration(seconds: 14), onTimeout: () => const {});
-
-    final best = pickBestNodeByPing(
-      catalog.nodes,
-      pings,
-      excludeCatalog: ref.read(syncServiceProvider).currentEntitlement().blocksCatalog,
-    );
-    if (best == null) {
-      // Nothing measured at all — leave the lowest-delay group installed above
-      // rather than locking onto an arbitrary node that may be one of the dead ones.
-      TikNetDiagnosticLog.w('smart', 'no measurable node; staying on lowest-delay group', {
-        'nodes': catalog.nodes.length,
-      });
-      return;
-    }
-
-    TikNetDiagnosticLog.i('smart', 'picked lowest ping', {
-      'tag': best.tag,
-      'ms': best.pingMs,
-      'approximate': best.approximate,
+    TikNetDiagnosticLog.i('smart', 'parked on core urltest/auto group', {
+      'selected': ok,
     });
-
-    await ref.read(Preferences.tikNetSmartLockedTag.notifier).update(best.tag);
-    await ref.read(Preferences.tikNetSmartLockedGroup.notifier).update(best.groupTag);
-    await _selectOutbound(
-      ref,
-      groupTag: best.groupTag,
-      outboundTag: best.tag,
-      reason: 'smart-pick',
-    );
   } catch (e) {
     TikNetDiagnosticLog.w('smart', 'smart connect failed', {'error': e.toString()});
   } finally {
@@ -104,7 +52,7 @@ Future<void> applyTikNetSmartConnect(WidgetRef ref) async {
   }
 }
 
-/// Winning node of a smart pick.
+/// Winning node of a smart pick (kept for unit tests / optional UI).
 typedef TikNetSmartPick = ({String tag, String groupTag, int pingMs, bool approximate});
 
 /// Lowest-latency node, preferring real proxied measurements.
@@ -140,18 +88,4 @@ TikNetSmartPick? pickBestNodeByPing(
   }
 
   return best ?? bestApproximate;
-}
-
-Future<void> _selectOutbound(
-  WidgetRef ref, {
-  required String groupTag,
-  required String outboundTag,
-  required String reason,
-}) async {
-  await selectOutboundInCore(
-    ref.read(proxyRepositoryProvider),
-    outboundTag: outboundTag,
-    preferredGroupTag: groupTag,
-    reason: reason,
-  );
 }
