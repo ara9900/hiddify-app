@@ -287,16 +287,15 @@ void _sanitizeWireGuardEndpoints(List<Map<String, dynamic>> endpoints) {
       continue;
     }
 
-    // Plain wireguard:// gets Amnezia-style noise from ray2sing; strip unless
-    // the endpoint itself carries explicit Amnezia junk params.
-    if (!_hasExplicitAmneziaParams(o) && o.containsKey('noise')) {
+    // ray2sing injects empty Amnezia-style noise.fake_packet on plain WG links;
+    // that breaks handshake. Strip empty/default noise always; keep only when
+    // real Amnezia junk params (jc/jmin/…) are present with values.
+    if (_isEmptyRay2singNoise(o['noise']) || !_hasExplicitAmneziaParams(o)) {
       o.remove('noise');
     }
 
     if (!_hasExplicitAmneziaParams(o)) {
       // Nested Android TUN: values above ~1280 often hit EMSGSIZE.
-      // Cap only when the author left a too-high MTU; keep authored lower values
-      // and enable UDP fragmentation so large packets can still flow.
       final mtu = (o['mtu'] as num?)?.toInt();
       if (mtu == null || mtu > 1280) o['mtu'] = 1280;
       o['udp_fragment'] = true;
@@ -307,6 +306,17 @@ void _sanitizeWireGuardEndpoints(List<Map<String, dynamic>> endpoints) {
 
     endpoints[i] = o;
   }
+}
+
+/// True for ray2sing's empty `noise.fake_packet` placeholder (not real Amnezia).
+bool _isEmptyRay2singNoise(Object? noise) {
+  if (noise is! Map) return false;
+  final fake = noise['fake_packet'];
+  if (fake is! Map) return false;
+  final count = '${fake['count'] ?? ''}'.trim();
+  final size = '${fake['size'] ?? ''}'.trim();
+  final delay = '${fake['delay'] ?? ''}'.trim();
+  return count.isEmpty && size.isEmpty && delay.isEmpty;
 }
 
 /// AmneziaWG junk/handshake params — if present, keep noise as authored.

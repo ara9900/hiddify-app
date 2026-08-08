@@ -121,19 +121,66 @@ Future<void> applyTikNetPersonalOutboundSelection(WidgetRef ref) async {
       reason: 'manual-pick',
     );
     if (!applied) {
-      TikNetDiagnosticLog.w('select', 'manual outbound rejected by core', {
-        'tag': outboundTag,
-        'group': groupTag,
-      });
-      // Catalog manual picks must not silently land on another country.
-      if (isTikNetCatalogOutboundTag(outboundTag)) {
-        await ref.read(connectionNotifierProvider.notifier).abortConnection();
-        return;
-      }
-      await ensureSafeDefaultOutbound(
-        ref.read(proxyRepositoryProvider),
-        reason: 'manual-pick-rejected',
+      // After profile remerge, stored tags can go stale (e.g. old "WG § 5" vs
+      // "TikNet-alireza § 7"). Resolve by stripped label before giving up.
+      final nodesState = await ref.read(personalOutboundProvider.future).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => const TikNetPersonalNodesState(catalog: null, nodePings: {}),
       );
+      final want = stripHiddifyTagSuffix(outboundTag);
+      TikNetPersonalProxyNode? alt;
+      final nodes = nodesState.catalog?.nodes ?? const <TikNetPersonalProxyNode>[];
+      for (final n in nodes) {
+        if (n.tag == outboundTag ||
+            stripHiddifyTagSuffix(n.tag) == want ||
+            n.displayLabel == want ||
+            n.displayLabel == outboundTag) {
+          alt = n;
+          break;
+        }
+      }
+      // Legacy short labels like "WG § 5" after remerge renamed the endpoint.
+      if (alt == null && want.toUpperCase().contains('WG')) {
+        for (final n in nodes) {
+          if (n.protocol == 'wireguard') {
+            alt = n;
+            break;
+          }
+        }
+      }
+      var recovered = false;
+      if (alt != null && alt.tag != outboundTag) {
+        recovered = await selectOutboundInCore(
+          ref.read(proxyRepositoryProvider),
+          outboundTag: alt.tag,
+          preferredGroupTag: alt.groupTag,
+          reason: 'manual-pick-stale-tag',
+        );
+        if (recovered) {
+          await sync.setSelectedServer((
+            isPersonal: true,
+            catalogId: null,
+            personalKind: TikNetPersonalPickKind.proxy,
+            personalTag: alt.tag,
+            personalGroupTag: alt.groupTag,
+          ));
+        }
+      }
+      if (!recovered) {
+        TikNetDiagnosticLog.w('select', 'manual outbound rejected by core', {
+          'tag': outboundTag,
+          'group': groupTag,
+        });
+        // Catalog manual picks must not silently land on another country.
+        if (isTikNetCatalogOutboundTag(outboundTag)) {
+          await ref.read(connectionNotifierProvider.notifier).abortConnection();
+          return;
+        }
+        await ensureSafeDefaultOutbound(
+          ref.read(proxyRepositoryProvider),
+          reason: 'manual-pick-rejected',
+        );
+      }
     }
   } catch (e) {
     TikNetDiagnosticLog.e('select', 'apply outbound selection failed', {'err': e.toString()});
