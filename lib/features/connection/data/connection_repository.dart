@@ -95,11 +95,9 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
         (_) => _startWithSanitizedProfile(activeProfile, disableMemoryLimit, restart: true),
       );
 
-  /// Ensure empty ray2sing WG noise is stripped before the core starts.
-  ///
-  /// The Go generator re-injects empty `noise.fake_packet` onto WireGuard
-  /// endpoints even from a clean profile. We generate → sanitize → start from
-  /// that runtime file so the live tunnel does not carry the placeholder.
+  /// Ensure empty ray2sing WG noise is stripped from the on-disk profile before
+  /// start. (The Go generator may still re-inject noise into current-config;
+  /// profile hygiene at least keeps source clean across sync/reconnect.)
   TaskEither<ConnectionFailure, Unit> _startWithSanitizedProfile(
     ProfileEntity activeProfile,
     bool disableMemoryLimit, {
@@ -109,7 +107,6 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
     final profilePath = profileFile.path;
 
     return TaskEither(() async {
-      var path = profilePath;
       if (tikNetMode) {
         try {
           if (profileFile.existsSync()) {
@@ -120,27 +117,14 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
               loggy.debug("stripped empty WireGuard noise from profile before start");
             }
           }
-          final generated = await singbox.generateFullConfigByPath(profilePath).run();
-          await generated.match(
-            (err) async {
-              loggy.warning("tiknet pre-start generate failed, using profile path", err);
-            },
-            (raw) async {
-              final cleaned = sanitizeTikNetSingboxJson(raw);
-              final runtime = profilePathResolver.file('tiknet-runtime-active');
-              await runtime.writeAsString(cleaned);
-              path = runtime.path;
-            },
-          );
         } catch (e, st) {
           loggy.warning("tiknet pre-start sanitize failed", e, st);
-          path = profilePath;
         }
       }
 
       final either = restart
-          ? await singbox.restart(path, activeProfile.name, disableMemoryLimit).run()
-          : await singbox.start(path, activeProfile.name, disableMemoryLimit).run();
+          ? await singbox.restart(profilePath, activeProfile.name, disableMemoryLimit).run()
+          : await singbox.start(profilePath, activeProfile.name, disableMemoryLimit).run();
       return either.mapLeft((l) => l is ConnectionFailure ? l : UnexpectedConnectionFailure(l));
     });
   }
