@@ -57,10 +57,11 @@ abstract class ConfigOptions {
     mapTo: (value) => value.key,
   );
 
-  /// Match stock Hiddify remote DNS. Forced DoH previously added an extra TLS
-  /// hop on every lookup and slowed TUN browsing for many nodes; users can
-  /// still pick DoH manually in settings when a catalog SS UDP path needs it.
-  static const tikNetDefaultRemoteDns = "tcp://8.8.8.8";
+  /// TikNet: DoH through the proxy. Plain UDP/TCP DNS over flaky VLESS/SS often
+  /// blackholes browser lookups (box.log: dns-remote reset by peer) while
+  /// direct-IP traffic still works. DoH reuses one TLS session and survives
+  /// short outbound flaps better than tcp://8.8.8.8.
+  static const tikNetDefaultRemoteDns = "https://1.1.1.1/dns-query";
 
   static final remoteDnsAddress = PreferencesNotifier.create<String, String>(
     "remote-dns-address",

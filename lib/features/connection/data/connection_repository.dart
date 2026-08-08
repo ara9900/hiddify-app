@@ -1,5 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/model/directories.dart';
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
@@ -8,6 +9,7 @@ import 'package:hiddify/features/profile/data/profile_path_resolver.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/warp_option/warp_option_notifier.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_config_merger.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service.dart';
 import 'package:hiddify/singbox/model/singbox_config_option.dart';
 import 'package:hiddify/singbox/model/core_status.dart';
@@ -80,8 +82,7 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
   @override
   TaskEither<ConnectionFailure, Unit> connect(ProfileEntity activeProfile, bool disableMemoryLimit) => setup().flatMap(
     (_) => applyConfigOption(activeProfile).flatMap(
-      (_) => singbox.start(profilePathResolver.file(activeProfile.id).path, activeProfile.name, disableMemoryLimit),
-      // .mapLeft(UnexpectedConnectionFailure.new),
+      (_) => _startWithSanitizedProfile(activeProfile, disableMemoryLimit, restart: false),
     ),
   );
 
@@ -91,10 +92,58 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
   @override
   TaskEither<ConnectionFailure, Unit> reconnect(ProfileEntity activeProfile, bool disableMemoryLimit) =>
       applyConfigOption(activeProfile).flatMap(
-        (_) => singbox
-            .restart(profilePathResolver.file(activeProfile.id).path, activeProfile.name, disableMemoryLimit)
-            .mapLeft(UnexpectedConnectionFailure.new),
+        (_) => _startWithSanitizedProfile(activeProfile, disableMemoryLimit, restart: true),
       );
+
+  /// Ensure empty ray2sing WG noise is stripped before the core starts.
+  ///
+  /// The Go generator re-injects empty `noise.fake_packet` onto WireGuard
+  /// endpoints even from a clean profile. We generate → sanitize → start from
+  /// that runtime file so the live tunnel does not carry the placeholder.
+  TaskEither<ConnectionFailure, Unit> _startWithSanitizedProfile(
+    ProfileEntity activeProfile,
+    bool disableMemoryLimit, {
+    required bool restart,
+  }) {
+    final profileFile = profilePathResolver.file(activeProfile.id);
+    final profilePath = profileFile.path;
+
+    return TaskEither(() async {
+      var path = profilePath;
+      if (tikNetMode) {
+        try {
+          if (profileFile.existsSync()) {
+            final raw = await profileFile.readAsString();
+            final cleaned = sanitizeTikNetSingboxJson(raw);
+            if (cleaned != raw) {
+              await profileFile.writeAsString(cleaned);
+              loggy.debug("stripped empty WireGuard noise from profile before start");
+            }
+          }
+          final generated = await singbox.generateFullConfigByPath(profilePath).run();
+          await generated.match(
+            (err) async {
+              loggy.warning("tiknet pre-start generate failed, using profile path", err);
+            },
+            (raw) async {
+              final cleaned = sanitizeTikNetSingboxJson(raw);
+              final runtime = profilePathResolver.file('tiknet-runtime-active');
+              await runtime.writeAsString(cleaned);
+              path = runtime.path;
+            },
+          );
+        } catch (e, st) {
+          loggy.warning("tiknet pre-start sanitize failed", e, st);
+          path = profilePath;
+        }
+      }
+
+      final either = restart
+          ? await singbox.restart(path, activeProfile.name, disableMemoryLimit).run()
+          : await singbox.start(path, activeProfile.name, disableMemoryLimit).run();
+      return either.mapLeft((l) => l is ConnectionFailure ? l : UnexpectedConnectionFailure(l));
+    });
+  }
 
   @visibleForTesting
   TaskEither<ConnectionFailure, Unit> applyConfigOption(ProfileEntity prof) =>

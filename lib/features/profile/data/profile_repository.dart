@@ -3,8 +3,9 @@ import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/db/db.dart';
-
+import 'package:hiddify/core/model/tiknet_config.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
+import 'package:hiddify/features/tiknet/service/tiknet_config_merger.dart';
 import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
 import 'package:hiddify/features/profile/data/profile_data_source.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
@@ -253,7 +254,11 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
   @override
   TaskEither<ProfileFailure, String> generateConfig(String id) => TaskEither.fromEither(
     Either.tryCatch(() => _profilePathResolver.file(id), ProfileFailure.unexpected),
-  ).flatMap((configFile) => _singbox.generateFullConfigByPath(configFile.path).mapLeft(ProfileFailure.unexpected));
+  ).flatMap(
+    (configFile) => _singbox.generateFullConfigByPath(configFile.path).mapLeft(ProfileFailure.unexpected).map(
+      (raw) => tikNetMode ? sanitizeTikNetSingboxJson(raw) : raw,
+    ),
+  );
 
   @override
   TaskEither<ProfileFailure, String> getRawConfig(String id) {
