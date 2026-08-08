@@ -10,14 +10,15 @@ pluginManagement {
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
     repositories {
-        // Prefer Aliyun mirrors when Google Maven is unreachable (common in IR).
+        // Google/Central first — GitHub Actions reaches these reliably.
+        // Aliyun second as fallback when Google is blocked (common in IR).
+        google()
+        mavenCentral()
+        gradlePluginPortal()
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/central' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
         maven { url 'https://maven.aliyun.com/repository/public' }
-        google()
-        mavenCentral()
-        gradlePluginPortal()
     }
 }
 
