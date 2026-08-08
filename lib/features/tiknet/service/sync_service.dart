@@ -849,6 +849,7 @@ class SyncService {
           .offlineUpdate(existing.copyWith(userOverride: userOverride), content)
           .run();
       if (result.isLeft()) return false;
+      await _sanitizeProfileFileOnDisk(existing.id, pathResolver);
       await _ref.read(Preferences.tikNetProfileId.notifier).update(existing.id);
       await _ref.read(Preferences.tikNetAppliedConfigHash.notifier).update(contentHash);
       await repo.setAsActive(existing.id).run();
@@ -872,6 +873,7 @@ class SyncService {
             .run()
             .timeout(const Duration(seconds: 20));
         if (result.isLeft()) return false;
+        await _sanitizeProfileFileOnDisk(existing.id, pathResolver);
       } on TimeoutException {
         TikNetDiagnosticLog.w('sync', 'profile offlineUpdate timed out');
         return false;
@@ -881,6 +883,9 @@ class SyncService {
         final result = await repo.addLocal(content, userOverride: userOverride).run().timeout(const Duration(seconds: 20));
         if (result.isLeft()) return false;
         existing = await _findTikNetProfile(repo);
+        if (existing != null) {
+          await _sanitizeProfileFileOnDisk(existing.id, pathResolver);
+        }
       } on TimeoutException {
         TikNetDiagnosticLog.w('sync', 'profile addLocal timed out');
         return false;
@@ -1037,6 +1042,23 @@ class SyncService {
       return onDisk.trim() == content.trim();
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Core validate/import can re-inject empty ray2sing WG noise; strip it after write.
+  Future<void> _sanitizeProfileFileOnDisk(String profileId, ProfilePathResolver pathResolver) async {
+    if (!tikNetMode || profileId.isEmpty) return;
+    try {
+      final file = pathResolver.file(profileId);
+      if (!file.existsSync()) return;
+      final raw = await file.readAsString();
+      final cleaned = sanitizeTikNetSingboxJson(raw);
+      if (cleaned != raw) {
+        await file.writeAsString(cleaned);
+        TikNetDiagnosticLog.i('sync', 'stripped empty WireGuard noise from profile file');
+      }
+    } catch (e) {
+      TikNetDiagnosticLog.w('sync', 'profile file sanitize failed', {'err': e.toString()});
     }
   }
 

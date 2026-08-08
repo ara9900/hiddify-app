@@ -269,7 +269,7 @@ TikNetMergedConfigResult mergeTikNetConfigs({
   }
 
   return TikNetMergedConfigResult(
-    configJson: const JsonEncoder.withIndent('  ').convert(config),
+    configJson: sanitizeTikNetSingboxJson(const JsonEncoder.withIndent('  ').convert(config)),
     mainGroupTag: mainGroup,
     nodes: nodes,
   );
@@ -287,15 +287,14 @@ void _sanitizeWireGuardEndpoints(List<Map<String, dynamic>> endpoints) {
       continue;
     }
 
-    // ray2sing injects empty Amnezia-style noise.fake_packet on plain WG links;
-    // that breaks handshake. Strip empty/default noise always; keep only when
-    // real Amnezia junk params (jc/jmin/…) are present with values.
-    if (_isEmptyRay2singNoise(o['noise']) || !_hasExplicitAmneziaParams(o)) {
+    // ray2sing injects empty noise.fake_packet on plain wireguard:// links.
+    // Keep noise only when real Amnezia junk params are present with values.
+    final keepNoise = _hasExplicitAmneziaParams(o) && !_isEmptyRay2singNoise(o['noise']);
+    if (!keepNoise) {
       o.remove('noise');
     }
 
     if (!_hasExplicitAmneziaParams(o)) {
-      // Nested Android TUN: values above ~1280 often hit EMSGSIZE.
       final mtu = (o['mtu'] as num?)?.toInt();
       if (mtu == null || mtu > 1280) o['mtu'] = 1280;
       o['udp_fragment'] = true;
@@ -310,13 +309,30 @@ void _sanitizeWireGuardEndpoints(List<Map<String, dynamic>> endpoints) {
 
 /// True for ray2sing's empty `noise.fake_packet` placeholder (not real Amnezia).
 bool _isEmptyRay2singNoise(Object? noise) {
+  if (noise == null) return true;
   if (noise is! Map) return false;
-  final fake = noise['fake_packet'];
+  final map = Map<Object?, Object?>.from(noise);
+  final fake = map['fake_packet'] ?? map['fakePacket'];
+  if (fake == null) {
+    // No packet body → treat as empty placeholder.
+    return map.isEmpty || map.values.every((v) => v == null || '$v'.trim().isEmpty);
+  }
   if (fake is! Map) return false;
-  final count = '${fake['count'] ?? ''}'.trim();
-  final size = '${fake['size'] ?? ''}'.trim();
-  final delay = '${fake['delay'] ?? ''}'.trim();
-  return count.isEmpty && size.isEmpty && delay.isEmpty;
+  final fm = Map<Object?, Object?>.from(fake);
+  bool blank(Object? v) => v == null || '$v'.trim().isEmpty || '$v'.trim() == '0';
+  return blank(fm['count']) && blank(fm['size']) && blank(fm['delay']);
+}
+
+/// Strip empty ray2sing WireGuard noise from merged sing-box JSON (idempotent).
+String sanitizeTikNetSingboxJson(String raw) {
+  final map = _parseSingboxMap(raw);
+  if (map == null) return raw;
+  final endpoints = _sectionMaps(map, 'endpoints');
+  if (endpoints.isEmpty) return raw;
+  final copy = [for (final e in endpoints) Map<String, dynamic>.from(e)];
+  _sanitizeWireGuardEndpoints(copy);
+  map['endpoints'] = copy;
+  return const JsonEncoder.withIndent('  ').convert(map);
 }
 
 /// AmneziaWG junk/handshake params — if present, keep noise as authored.
