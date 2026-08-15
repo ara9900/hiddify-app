@@ -1,5 +1,9 @@
 <div dir="ltr" align=center>
-    
+
+> **TikNet fork:** This repository is customized as **TikNet VPN** (panel login, 3-tab UI).  
+> See **[TIKNET.md](TIKNET.md)** and **[docs/](docs/README.md)** for product setup and architecture.  
+> The content below describes the upstream **Hiddify** project.
+
 [**![Lang_farsi](https://user-images.githubusercontent.com/125398461/234186932-52f1fa82-52c6-417f-8b37-08fe9250a55f.png) فارسی**](README_fa.md) / [**Русский 🇷🇺**](README_ru.md) / [**简体中文 🇨🇳**](README_cn.md) / [**日本語 🇯🇵**](README_ja.md) / [**Portugês-BR 🇧🇷**](README_br.md)
 
 </div>
